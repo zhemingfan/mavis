@@ -33,6 +33,7 @@ class SplitAlignment(BreakpointPair):
         self.read2 = kwargs.pop('read2', None)
         self.query_sequence = self.read1.query_sequence
         self.query_name = self.read1.query_name
+        self.useq_phred_scores = kwargs.pop('useq_phred_scores', None)
         BreakpointPair.__init__(self, *pos, **kwargs)
 
     def query_coverage_read1(self):
@@ -181,17 +182,22 @@ def call_read_events(read, secondary_read=None):
                 curr_event = None
         elif state in _cigar.REFERENCE_ALIGNED_STATES:  # del
             if curr_event:
-                ref_start, delsize, insseq = curr_event
-                curr_event = (ref_start, delsize + freq, insseq)
+                ref_start, delsize, insseq, insphred = curr_event
+                curr_event = (ref_start, delsize + freq, insseq, insphred)
             else:
-                curr_event = (reference_pos, freq, '')
+                curr_event = (reference_pos, freq, '', None)
             reference_pos += freq
         elif state in _cigar.QUERY_ALIGNED_STATES:  # ins
             if curr_event:
-                ref_start, delsize, insseq = curr_event
-                curr_event = (ref_start, delsize, insseq + read.query_sequence[query_pos: query_pos + freq])
+                ref_start, delsize, insseq, insphred = curr_event
+                if read.query_qualities:
+                    insphred.extend(read.query_qualities[query_pos: query_pos + freq])
+                curr_event = (ref_start, delsize, insseq + read.query_sequence[query_pos: query_pos + freq], insphred)
             else:
-                curr_event = (reference_pos, 0, read.query_sequence[query_pos: query_pos + freq])
+                if read.query_qualities:
+                    curr_event = (reference_pos, 0, read.query_sequence[query_pos: query_pos + freq], read.query_qualities[query_pos: query_pos + freq])
+                else:
+                    curr_event = (reference_pos, 0, read.query_sequence[query_pos: query_pos + freq], None)
             query_pos += freq
         elif state != CIGAR.H:
             raise NotImplementedError('Should never happen. Invalid cigar state is not reference or query aligned', state)
@@ -199,11 +205,11 @@ def call_read_events(read, secondary_read=None):
         events.append(curr_event)
     result = []
     strand = STRAND.NEG if read.is_reverse else STRAND.POS
-    for ref_start, delsize, insseq in events:
+    for ref_start, delsize, insseq, insphred in events:
         bpp = SplitAlignment(
             Breakpoint(read.reference_name, ref_start, orient=ORIENT.LEFT, strand=strand),
             Breakpoint(read.reference_name, ref_start + delsize + 1, orient=ORIENT.RIGHT, strand=strand),
-            untemplated_seq=insseq, read1=read, read2=secondary_read
+            untemplated_seq=insseq, read1=read, read2=secondary_read, useq_phred_scores=insphred
         )
         result.append(bpp)
     return result

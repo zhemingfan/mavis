@@ -414,3 +414,76 @@ class TestMapRefRangeToQueryRange(unittest.TestCase):
         self.assertEqual(10, len(qrange))
         self.assertEqual(6, qrange.start)
         self.assertEqual(15, qrange.end)
+
+
+class TestConsensusBase(unittest.TestCase):
+
+    def test_low_count(self):
+        base, phred, score = _read.consensus_base([
+            ('C', 12), ('A', 41), ('A', 55), ('A', 41), ('A', 12)
+        ])
+        self.assertEqual(0.925, round(score, 3))
+        self.assertEqual(37, phred)
+        self.assertEqual('A', base)
+
+    def test_equal_alpha_sort(self):
+        base, phred, score = _read.consensus_base([
+            ('C', 12), ('A', 12)
+        ])
+        self.assertEqual(12, phred)
+        self.assertEqual('A', base)
+        self.assertEqual(0.5, score)
+
+
+class TestConsensusRead(unittest.TestCase):
+
+    def setUp(self):
+        self.reads = [
+
+            MockRead(
+                reference_name='11',
+                reference_start=128657702,
+                cigar=[(4, 2), (0, 143), (4, 5)],
+                query_qualities=[32, 32, 37, 37, 37, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 32, 12, 27, 12, 22, 27, 41, 12, 37, 12, 22, 12, 27, 12, 27, 12, 22, 12, 12, 32, 27, 12, 22, 12, 22, 12, 22, 12, 22, 12, 12, 27, 12, 32, 32, 32, 12, 22, 27, 12, 22, 27, 12, 22, 12, 27, 12, 22, 22, 12, 22, 22, 12, 12, 12, 22, 12, 12, 12, 12, 22, 12, 22, 32, 37, 12, 22, 37, 12, 22, 37, 12, 22, 41, 41, 32, 37, 41, 12, 37, 12, 12, 22, 12, 22, 41, 12, 22, 32, 22, 12, 27, 32, 12, 8, 8, 32, 8, 22, 8, 22, 37, 41, 8, 12, 12, 8, 8, 8, 12, 32, 8, 12, 12, 8, 8, 12, 27, 8, 27, 8, 8, 12, 12, 12, 32, 8, 8, 8, 27, 32],
+                query_sequence='ATTTTTTTTTTTTTTTTTTGAGATGGAGTCTCGCTCTGTCGCTCCGGCTGGGGTGCGGGGGCGTGATCTCGGCTCCCTGCCAGCTCCCCCCCCCGGGTTTCCGCCCTTCTCCTGCCTCCGCCCCCTGGGTCGCTGGGCCTACAGGGGCCC',
+                query_alignment_start=2),
+            MockRead(
+                reference_name='11',
+                reference_start=128657716,
+                cigar=[(4, 52), (0, 98)],
+                query_qualities=[32, 32, 37, 37, 37, 41, 41, 41, 41, 41, 41, 37, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 37, 41, 41, 41, 41, 37, 41, 41, 41, 41, 41, 41, 37, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 32, 37, 37, 41, 41, 41, 32, 41, 27, 41, 41, 37, 37, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 22, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 37, 27, 37, 41, 37, 41, 41, 37, 32, 37, 41, 41, 37, 41, 41, 41, 41, 41, 41, 12, 32, 41, 41, 41, 41, 37, 37, 41, 41, 41, 41, 41, 22, 8, 27, 37, 41, 41, 41, 41, 22, 27, 27, 32, 32, 37, 37, 27, 22],
+                query_sequence='GAGGACGCGGTGGAATGGGGTAAGAGCAAACCTTTTCTCCTTTTACCTAATATTTGAGATGGAGTCTCGCTCTGTCGCTCAGGCTGGAGTGCGGTGGCGTGATCTCGGCTCACTGCAAGCTCCACCTCCCGGGTTCACGCCATTCTCCTG',
+                query_alignment_start=52),
+            MockRead(
+                reference_name='11',
+                reference_start=128657716,
+                cigar=[(4, 57), (0, 93)],
+                query_qualities=[41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 37, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 37, 37, 37, 32, 32],
+                query_sequence='GGGAGGAGGACGCGGTGGAATGGGGTAAGAGCAAACCTTTTCTCCTTTTACCTAATATTTGAGATGGAGTCTCGCTCTGTCGCTCAGGCTGGAGTGCGGTGGCGTGATCTCGGCTCACTGCAAGCTCCACCTCCCGGGTTCACGCCATTC',
+                query_alignment_start=57),
+            MockRead(
+                reference_name='11',
+                reference_start=128657716,
+                cigar=[(4, 52), (0, 98)],
+                query_qualities=[22, 8, 27, 12, 12, 12, 12, 12, 8, 22, 37, 27, 37, 37, 37, 32, 37, 32, 22, 12, 27, 12, 12, 8, 12, 22, 12, 12, 12, 12, 41, 37, 41, 41, 37, 27, 32, 32, 37, 41, 41, 37, 37, 27, 12, 32, 41, 37, 27, 12, 32, 32, 32, 32, 12, 32, 22, 12, 27, 12, 12, 37, 12, 37, 27, 41, 37, 41, 41, 37, 41, 32, 27, 37, 32, 22, 41, 37, 27, 41, 41, 41, 37, 37, 41, 37, 37, 37, 41, 41, 27, 41, 41, 41, 41, 37, 32, 37, 41, 22, 32, 37, 37, 12, 41, 41, 37, 41, 32, 22, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 37, 37, 41, 41, 27, 41, 37, 41, 41, 41, 41, 41, 41, 41, 41, 41, 37, 41, 37, 32, 37, 37, 37, 32, 32],
+                query_sequence='GAGGACGCGGTGGAATGGGGTAAGAGCACACCTTTTCTCCTTTTACCTAATATTTGAGATGGAGTCTCGCTCTGTCGCTCAGGCTGGAGTGCGGTGGCGTGATCTCGGCTCACTGCAAGCTCCACCTCCCGGGTTCACGCCATTCTCCTG',
+                query_alignment_start=52),
+            MockRead(
+                reference_name='11',
+                reference_start=128657716,
+                cigar=[(4, 55), (0, 95)],
+                query_qualities=[41, 41, 41, 41, 37, 41, 41, 41, 32, 41, 41, 41, 41, 41, 41, 41, 41, 32, 32, 41, 41, 41, 41, 41, 41, 41, 41, 37, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 37, 41, 41, 41, 41, 41, 41, 37, 37, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 37, 41, 41, 41, 41, 41, 41, 37, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 37, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 37, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 37, 37, 37, 32, 32],
+                query_sequence='GAGGAGGACGCGGTGGAATGGGGTAAGAGCAAACCTTTTCTCCTTTTACCTAATATTTGAGATGGAGTCTCGCTCTGTCGCTCAGGCTGGAGTGCGGTGGCGTGATCTCGGCTCACTGCAAGCTCCACCTCCCGGGTTCACGCCATTCTC',
+                query_alignment_start=55)
+        ]
+
+    def test_left_sc(self):
+        self.reads.append(MockRead(
+                reference_name='11', reference_start=128657572,
+                query_sequence='AATCAGCACAGTTTCTGACACACCAATAAGTGCTCAATAAAAGTTATAATAAGGATAGTAAATTGTTATTCTAATTTATTATAGTACAAATTCTAATAGTAATTAACATTATTATTGAAAGCTAATTACAATTTTTTTTTTTTTTT',
+                query_alignment_start=0,
+                cigar=[(0, 146)],
+                query_qualities=[41 for x in range(0, 146)]
+            ))
+        reads = _read.consensus_reads(self.reads, 0.6, 1, 10)
+        self.assertEqual(2, len(reads))

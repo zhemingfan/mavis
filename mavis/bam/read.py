@@ -1,4 +1,5 @@
 from copy import copy
+import math
 import re
 import subprocess
 
@@ -514,3 +515,140 @@ def convert_events_to_softclipping(read, orientation, max_event_size, min_anchor
     else:
         raise ValueError('orientation must be specified', orientation)
     return read
+
+
+def consensus_reads(reads, min_consensus_score=0.5, min_consensus_count=3, min_length=0):
+    """
+    compute a consensus read for all input reads
+    """
+    ref_intersect = Interval.intersection(*[Interval(r.reference_start, r.reference_end) for r in reads])
+    if not ref_intersect:
+        raise ValueError('Cannot compute a consensus for reads without a common intersection')
+    # left most position of the reference intersection is where all reads should start alignment
+    phred_hist = {}  # query_pos => (ref_pos, base, score, cigar_state)
+    for read in reads:
+        offset = read.reference_start - ref_intersect.start - read.query_alignment_start
+        cigar_values = []
+        ref_pos = read.reference_start
+        for state, freq in read.cigar:
+            for _ in range(0, freq):
+                if state in _cigar.REFERENCE_ALIGNED_STATES:
+                    cigar_values.append((ref_pos, state))
+                    ref_pos += 1
+                elif state != CIGAR.H:
+                    cigar_values.append((None, state))
+
+        for index in range(0, len(read.query_sequence)):
+            phred_hist.setdefault(offset + index, []).append((
+                read.query_sequence[index],
+                read.query_qualities[index] if read.query_qualities else None,
+                cigar_values[index][0],
+                cigar_values[index][1],
+                read  # for tracking the consensus back to each read
+            ))
+    # finds the consensus (where possible) at all positions
+    consensus = []
+    for query_pos, values in phred_hist.items():
+        if len(values) < min_consensus_count:
+            continue
+        cons_base, cons_phred, cons_score = consensus_base([(v[0], v[1]) for v in values])
+        if cons_score < min_consensus_score:
+            continue
+        other = {(v[2], v[3]) for v in values if v[0] == cons_base}
+        if (None, CIGAR.S) in other and len(other) == 2:
+            other = {(None, CIGAR.S)}
+        if len(other) != 1:
+            continue
+        ref_pos, cigar_state = other.pop()
+        consensus.append((query_pos, cons_base, cons_phred, ref_pos, cigar_state, [v[4] for v in values if v[0] == cons_base]))
+
+    consecutive_cons = []
+    for value in sorted(consensus):
+        if not consecutive_cons or consecutive_cons[-1][-1][0] != value[0] - 1:
+            consecutive_cons.append([value])
+        else:
+            consecutive_cons[-1].append(value)
+    print('consecutive_cons', [len(v) for v in consecutive_cons])
+
+    read_support = {}  # read => {cons read => score}
+    for curr in sorted(consecutive_cons, key=lambda x: len(x), reverse=True):
+        if len(curr) < min_length:
+            continue
+        if not {c[4] for c in curr} - {CIGAR.S, CIGAR.H}:  # nothing aligned
+            continue
+        cigar = []
+        for _, _, _, ref_pos, cigar_state, _ in curr:
+            if not cigar or cigar[-1][1] != cigar_state:
+                cigar.append((ref_pos, cigar_state, 1))
+            else:
+                cigar[-1] = (cigar[-1][0], cigar_state, cigar[-1][2] + 1)
+        print(cigar)
+        for i, (_, state, _) in enumerate(cigar):
+            if state == CIGAR.S and i > 0 and i < len(cigar) - 1:
+                prev_align_count = 0
+                for _, prev_state, prev_freq in cigar[:i:-1]:
+                    if prev_state not in {CIGAR.H, CIGAR.S}:
+                        prev_align_count += prev_freq
+                    else:
+                        break
+                next_align_count = 0
+                for _, next_state, next_freq in cigar[i + 1:]:
+                    if prev_state not in {CIGAR.H, CIGAR.S}:
+                        next_align_count += next_freq
+                    else:
+                        break
+                if prev_align_count >= next_align_count:
+                    for i in range(0, i):
+                        cigar[i] = (cigar[i][0], CIGAR.S, cigar[i][2])
+                else:
+                    for i in range(i + 1, len(cigar)):
+                        cigar[i] = (cigar[i][0], CIGAR.S, cigar[i][2])
+        print(cigar)
+        cons_read = SamRead(
+            reference_start=min([c[0] for c in cigar if c[1] in _cigar.REFERENCE_ALIGNED_STATES]),
+            query_sequence=''.join([c[1] for c in curr]),
+            cigar=_cigar.join([(c[1], c[2]) for c in cigar]),
+            query_qualities=[c[2] for c in curr]
+        )
+        print('cons_read', _cigar.join([(c[1], c[2]) for c in cigar]))
+        print(cons_read)
+        for reads in [v[5] for v in curr]:
+            for read in reads:
+                read_support.setdefault(read, {})
+                read_support[read][cons_read] = read_support[read].get(cons_read, 0) + 1
+    print()
+    cons_to_reads = {}
+    # now assign each read to its best scoring consensus
+    for read in read_support:
+        best_read, best_score = max(read_support[read].items(), key=lambda x: x[1])
+        best_score = best_score / min(len(best_read.query_sequence), len(read.query_sequence))
+        if best_score < min_consensus_score:
+            print('\nscore too low')
+            print(read)
+            print(best_read)
+            print(best_score)
+            continue
+        cons_to_reads.setdefault(best_read, []).append(read)
+    for read, support in cons_to_reads.items():
+        print(read)
+        for r in support:
+            print('supp by', r)
+
+
+def consensus_base(bases):
+    """
+    For a list of tuples representing bases and phred scores computes the consensus base, weighted by phred score
+
+    Returns:
+        tuple:
+            - str: the consensus base
+            - int: the new phred (average phred)
+            - float: the score for the consensus (0-1)
+    """
+    total_phred = 0
+    probs = {}
+    for base, phred_qual in bases:
+        probs.setdefault(base.upper(), []).append(phred_qual)
+        total_phred += phred_qual
+    max_base, max_phred = min([(k, v) for k, v in probs.items()], key=lambda x: (-1 * sum(x[1]), x[0]))
+    return max_base, int(round(sum(max_phred) / len(max_phred), 0)), sum(max_phred) / total_phred

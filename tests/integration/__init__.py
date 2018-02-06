@@ -102,6 +102,7 @@ class MockRead:
         self.next_reference_id = next_reference_id
         self.reference_name = reference_name
         self.query_sequence = query_sequence
+        self.query_qualities = kwargs.pop('query_qualities', None)
         self.query_alignment_sequence = query_alignment_sequence
         self.query_alignment_start = query_alignment_start
         self.query_alignment_end = query_alignment_end
