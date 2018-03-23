@@ -398,7 +398,8 @@ SVTYPE = MavisNamespace(
     ITRANS='inverted translocation',
     INV='inversion',
     INS='insertion',
-    DUP='duplication'
+    DUP='duplication',
+    SUB='substitution'
 )
 """:class:`MavisNamespace`: holds controlled vocabulary for acceptable structural variant classifications
 

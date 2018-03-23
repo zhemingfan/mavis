@@ -101,7 +101,7 @@ def main(
             COLUMNS.stranded: False,
             COLUMNS.tracking_id: ''
         },
-        expand_strand=False, expand_orient=True, expand_svtype=True
+        expand_strand=False, expand_orient=True
     )
     # filter any breakpoint pairs where the library and protocol don't match
     other_libs = set()

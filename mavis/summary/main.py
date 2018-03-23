@@ -95,7 +95,7 @@ def main(
             'dgv',
             'summary_pairing']
         }, COLUMNS.call_method: CALL_METHOD.INPUT},
-        expand_strand=False, expand_orient=False, expand_svtype=False,
+        expand_strand=False, expand_orient=False,
         cast={
             COLUMNS.break1_split_reads: partial(soft_cast, cast_type=int),
             COLUMNS.break2_split_reads: partial(soft_cast, cast_type=int),

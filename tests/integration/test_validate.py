@@ -213,6 +213,7 @@ class TestFullEvidenceGathering(unittest.TestCase):
             Breakpoint('reference11', 6003, orient=ORIENT.RIGHT),
             opposing_strands=False
         )
+        print(ev1.putative_event_types)
         ev1.load_evidence()
         self.print_evidence(ev1)
 

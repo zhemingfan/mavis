@@ -35,7 +35,7 @@ class Evidence(BreakpointPair):
             opposing_strands=None,
             untemplated_seq=None,
             data={},
-            classification=None,
+            putative_event_types=None,
             **kwargs):
         """
         Args:
@@ -76,17 +76,15 @@ class Evidence(BreakpointPair):
             setattr(self, arg, val)
 
         self.bam_cache = bam_cache
-        self.classification = classification
         self.reference_genome = reference_genome
         self.read_length = read_length
         self.stdev_fragment_size = stdev_fragment_size
         self.median_fragment_size = median_fragment_size
         self.compatible_window1 = None
         self.compatible_window2 = None
-
-        if self.classification is not None and self.classification not in BreakpointPair.classify(self):
-            raise AttributeError(
-                'breakpoint pair improper classification', BreakpointPair.classify(self), self.classification)
+        self.putative_event_types = BreakpointPair.classify(self) if putative_event_types is None else putative_event_types
+        if not self.putative_event_types & BreakpointPair.classify(self):
+            raise AttributeError('breakpoint pair improper classification', BreakpointPair.classify(self), self.putative_event_types)
 
         if self.break1.orient == ORIENT.NS or self.break2.orient == ORIENT.NS:
             raise NotSpecifiedError(
@@ -121,7 +119,8 @@ class Evidence(BreakpointPair):
             return Interval(start - distance)
         return Interval(start + distance)
 
-    def collect_from_outer_window(self):
+    @property
+    def expects_flanking(self):
         """
         determines if evidence should be collected from the outer window (looking for flanking evidence)
         or should be limited to the inner window (split/spanning/contig only)
@@ -132,6 +131,8 @@ class Evidence(BreakpointPair):
         if self.interchromosomal:
             return True
         elif len(self.break1 | self.break2) >= self.outer_window_min_event_size:
+            return True
+        elif self.untemplated_seq and len(self.untemplated_seq) >= self.outer_window_min_event_size:
             return True
         return False
 
@@ -156,20 +157,11 @@ class Evidence(BreakpointPair):
             read, self.reference_genome[self.bam_cache.get_read_reference_name(read)].seq)
         return read
 
-    def putative_event_types(self):
-        """
-        Returns:
-            list of :class:`~mavis.constants.SVTYPE`: list of the possible classifications
-        """
-        if self.classification:
-            return {self.classification}
-        return BreakpointPair.classify(self)
-
     @property
     def compatible_type(self):
-        if SVTYPE.INS in self.putative_event_types():
+        if SVTYPE.INS in self.putative_event_types:
             return SVTYPE.DUP
-        elif SVTYPE.DUP in self.putative_event_types():
+        elif SVTYPE.DUP in self.putative_event_types:
             return SVTYPE.INS
         return None
 
@@ -230,7 +222,7 @@ class Evidence(BreakpointPair):
 
                 read = self.standardize_read(read)
             # in the correct position, now determine if it can support the event types
-            for event_type in self.putative_event_types():
+            for event_type in self.putative_event_types:
                 if event_type in [SVTYPE.DUP, SVTYPE.INS]:
                     if CIGAR.I in [c[0] for c in read.cigar]:
                         self.spanning_reads.add(read)
@@ -385,7 +377,7 @@ class Evidence(BreakpointPair):
             if strand1 != self.break1.strand or strand2 != self.break2.strand:
                 return False
 
-        for event_type in self.putative_event_types():
+        for event_type in self.putative_event_types - {SVTYPE.SUB}:  # flanking evidence is not possible for a substitution
 
             # check that the pair orientation is correct
             if not _read.orientation_supports_type(read, event_type):
@@ -773,7 +765,7 @@ class Evidence(BreakpointPair):
             elif set([x[0] for x in read.cigar]) & {CIGAR.S, CIGAR.H}:
                 return True
             elif not read.is_proper_pair:
-                if any([_read.orientation_supports_type(read, e) for e in self.putative_event_types()]):
+                if any([_read.orientation_supports_type(read, e) for e in self.putative_event_types]):
                     return True
                 elif self.compatible_type and _read.orientation_supports_type(read, self.compatible_type):
                     return True
@@ -820,7 +812,7 @@ class Evidence(BreakpointPair):
                 self.collect_spanning_read(read)
             if read.mate_is_unmapped:
                 half_mapped_partners1.add(read)
-            elif any([_read.orientation_supports_type(read, et) for et in self.putative_event_types()]) and \
+            elif any([_read.orientation_supports_type(read, et) for et in self.putative_event_types]) and \
                     (read.reference_id != read.next_reference_id) == self.interchromosomal:
                 flanking_pairs.add(read)
 
@@ -845,7 +837,7 @@ class Evidence(BreakpointPair):
                 self.collect_spanning_read(read)
             if read.mate_is_unmapped:
                 half_mapped_partners2.add(read)
-            elif any([_read.orientation_supports_type(read, et) for et in self.putative_event_types()]) and \
+            elif any([_read.orientation_supports_type(read, et) for et in self.putative_event_types]) and \
                     (read.reference_id != read.next_reference_id) == self.interchromosomal:
                 flanking_pairs.add(read)
         for flanking_read in sorted(flanking_pairs, key=lambda x: (x.query_name, x.reference_start)):
@@ -859,7 +851,7 @@ class Evidence(BreakpointPair):
 
         if self.compatible_window1:
             compatible_type = SVTYPE.DUP
-            if SVTYPE.DUP in self.putative_event_types():
+            if SVTYPE.DUP in self.putative_event_types:
                 compatible_type = SVTYPE.INS
 
             compt_flanking = set()
@@ -930,7 +922,7 @@ class Evidence(BreakpointPair):
             COLUMNS.raw_break1_half_mapped_reads: len(self.half_mapped[0]),
             COLUMNS.raw_break2_half_mapped_reads: len(self.half_mapped[1]),
             COLUMNS.protocol: self.protocol,
-            COLUMNS.event_type: ';'.join(sorted(self.putative_event_types())),
+            COLUMNS.event_type: ';'.join(sorted(self.putative_event_types)),
             COLUMNS.contigs_assembled: len(self.contigs),
             COLUMNS.break1_ewindow: '{}-{}'.format(*self.outer_window1),
             COLUMNS.break2_ewindow: '{}-{}'.format(*self.outer_window2),

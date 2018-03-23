@@ -81,6 +81,7 @@ class TestConvert(unittest.TestCase):
         bpp1, bpp2 = result[bnd_id]
         if bpp1.event_type == SVTYPE.ITRANS:
             bpp2, bpp1 = bpp1, bpp2
+        print(bpp1, bpp2)
         self.assertEqual(SVTYPE.TRANS, bpp1.event_type)
         self.assertEqual(SVTYPE.ITRANS, bpp2.event_type)
         for bpp in [bpp1, bpp2]:

@@ -233,6 +233,10 @@ def read_inputs(inputs, **kwargs):
     return bpps
 
 
+def join_iterable(iterable, delim=';'):
+    return delim.join([str(item) for item in iterable])
+
+
 def output_tabbed_file(bpps, filename, header=None):
     if header is None:
         custom_header = False
@@ -246,6 +250,9 @@ def output_tabbed_file(bpps, filename, header=None):
         rows.append(row)
         if not custom_header:
             header.update(row.keys())
+        for col, value in row.items():
+            if isinstance(value, (set, list)):
+                row[col] = join_iterable(value)
     header = sort_columns(header)
 
     with open(filename, 'w') as fh:
@@ -350,7 +357,7 @@ def unique_exists(pattern, allow_none=False, get_newest=False):
         raise OSError('no result found', pattern)
 
 
-def read_bpp_from_input_file(filename, expand_orient=False, expand_strand=False, expand_svtype=False, **kwargs):
+def read_bpp_from_input_file(filename, expand_orient=False, expand_strand=False, **kwargs):
     """
     reads a file using the tab module. Each row is converted to a breakpoint pair and
     other column data is stored in the data attribute
@@ -450,21 +457,19 @@ def read_bpp_from_input_file(filename, expand_orient=False, expand_strand=False,
 
         temp = []
         expand_strand = stranded and expand_strand
-        event_type = [None]
+        event_type = None
         if row.get(COLUMNS.event_type, None) not in [None, 'None']:
             try:
-                event_type = row[COLUMNS.event_type].split(';')
-                for putative_event_type in event_type:
-                    SVTYPE.enforce(putative_event_type)
+                event_type = row[COLUMNS.event_type]
+                SVTYPE.enforce(event_type)
             except KeyError:
                 pass
 
-        for orient1, orient2, strand1, strand2, putative_event_type in itertools.product(
+        for orient1, orient2, strand1, strand2 in itertools.product(
             ORIENT.expand(row[COLUMNS.break1_orientation]) if expand_orient else [row[COLUMNS.break1_orientation]],
             ORIENT.expand(row[COLUMNS.break2_orientation]) if expand_orient else [row[COLUMNS.break2_orientation]],
             STRAND.expand(strand1) if expand_strand and stranded else [strand1],
-            STRAND.expand(strand2) if expand_strand and stranded else [strand2],
-            event_type
+            STRAND.expand(strand2) if expand_strand and stranded else [strand2]
         ):
             try:
                 break1 = Breakpoint(
@@ -491,21 +496,19 @@ def read_bpp_from_input_file(filename, expand_orient=False, expand_strand=False,
                     stranded=row[COLUMNS.stranded],
                 )
                 bpp.data.update(data)
-                if putative_event_type:
-                    bpp.data[COLUMNS.event_type] = putative_event_type
-                    if putative_event_type not in BreakpointPair.classify(bpp):
-                        raise InvalidRearrangement(
-                            'error: expected one of', BreakpointPair.classify(bpp),
-                            'but found', putative_event_type, str(bpp), row)
-                if expand_svtype and not putative_event_type:
-                    for svtype in BreakpointPair.classify(bpp, distance=lambda x, y: Interval(y - x)):
-                        new_bpp = bpp.copy()
-                        new_bpp.data[COLUMNS.event_type] = svtype
-                        temp.append(new_bpp)
+                putative_types = BreakpointPair.classify(bpp)
+                if event_type:
+                    putative_types = putative_types & {event_type}
+
+                if not putative_types:
+                    raise InvalidRearrangement('Expected', BreakpointPair.classify(bpp), 'given', event_type, 'for', bpp)
+                elif len(putative_types) == 1:
+                    bpp.data[COLUMNS.event_type] = list(putative_types)[0]
                 else:
-                    temp.append(bpp)
+                    bpp.data[COLUMNS.event_type] = None
+                temp.append(bpp)
             except InvalidRearrangement as err:
-                if not any([expand_strand, expand_svtype, expand_orient]):
+                if not any([expand_strand, expand_orient]):
                     raise err
             except AssertionError as err:
                 if not expand_strand:

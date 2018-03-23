@@ -115,6 +115,7 @@ class TestNetSizeTransEGFR(unittest.TestCase):
         self.assertEqual(Interval(-44), bpp.net_size(self.egfr_distance))
 
 
+
 class TestLt(unittest.TestCase):
     def test_break1(self):
         bpp1 = BreakpointPair(Breakpoint('1', 1, 10, orient=ORIENT.LEFT), Breakpoint('2', 1, orient=ORIENT.LEFT), untemplated_seq='')

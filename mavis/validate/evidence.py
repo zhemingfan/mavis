@@ -15,8 +15,7 @@ class GenomeEvidence(Evidence):
         Evidence.__init__(self, *pos, **kwargs)
         self.protocol = PROTOCOL.GENOME
 
-        self.outer_window1 = self.generate_window(self.break1)
-        self.outer_window2 = self.generate_window(self.break2)
+
         self.inner_window1 = Interval(
             max([self.break1.start - self.call_error - self.read_length + 1, 1]),
             self.break1.end + self.call_error + self.read_length - 1)
@@ -24,7 +23,14 @@ class GenomeEvidence(Evidence):
             max([self.break2.start - self.call_error - self.read_length + 1, 1]),
             self.break2.end + self.call_error + self.read_length - 1)
 
-        if SVTYPE.INS in self.putative_event_types():
+        if self.expects_flanking:
+            self.outer_window1 = self.generate_window(self.break1)
+            self.outer_window2 = self.generate_window(self.break2)
+        else:
+            self.outer_window1 = self.inner_window1
+            self.outer_window2 = self.inner_window2
+
+        if SVTYPE.INS in self.putative_event_types:
             comb = len(self.break1 | self.break2)
             if comb > len(self.break1) and comb > len(self.break2):
                 compt_break1 = Breakpoint(
@@ -34,7 +40,7 @@ class GenomeEvidence(Evidence):
 
                 self.compatible_window1 = self.generate_window(compt_break1)
                 self.compatible_window2 = self.generate_window(compt_break2)
-        elif SVTYPE.DUP in self.putative_event_types():
+        elif SVTYPE.DUP in self.putative_event_types:
             compt_break1 = Breakpoint(
                 self.break1.chr, self.break1.start, self.break1.end, orient=ORIENT.LEFT, strand=self.break1.strand)
             compt_break2 = Breakpoint(
@@ -84,14 +90,19 @@ class TranscriptomeEvidence(Evidence):
         # get the list of overlapping transcripts
         self.overlapping_transcripts = overlapping_transcripts(annotations, self.break1) | overlapping_transcripts(annotations, self.break2)
 
-        self.outer_window1 = self.generate_window(self.break1)
-        self.outer_window2 = self.generate_window(self.break2)
         tgt = self.call_error + self.read_length - 1
 
         self.inner_window1 = self.traverse(self.break1.end, tgt, ORIENT.RIGHT) | self.traverse(self.break1.start, tgt, ORIENT.LEFT)
         self.inner_window2 = self.traverse(self.break2.start, tgt, ORIENT.LEFT) | self.traverse(self.break2.end, tgt, ORIENT.RIGHT)
 
-        if SVTYPE.INS in self.putative_event_types():
+        if self.expects_flanking:
+            self.outer_window1 = self.generate_window(self.break1)
+            self.outer_window2 = self.generate_window(self.break2)
+        else:
+            self.outer_window1 = self.inner_window1
+            self.outer_window2 = self.inner_window2
+
+        if SVTYPE.INS in self.putative_event_types:
             comb = len(self.break1 | self.break2)
             if comb > len(self.break1) and comb > len(self.break2):
                 compt_break1 = Breakpoint(
@@ -101,7 +112,7 @@ class TranscriptomeEvidence(Evidence):
                 self.compatible_window1 = self.generate_window(compt_break1)
                 self.compatible_window2 = self.generate_window(compt_break2)
 
-        elif SVTYPE.DUP in self.putative_event_types():
+        elif SVTYPE.DUP in self.putative_event_types:
             compt_break1 = Breakpoint(
                 self.break1.chr, self.break1.start, self.break1.end, orient=ORIENT.LEFT, strand=self.break1.strand)
             compt_break2 = Breakpoint(

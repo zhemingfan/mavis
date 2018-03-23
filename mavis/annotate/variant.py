@@ -66,7 +66,8 @@ class Annotation(BreakpointPair):
         self.genes_overlapping_break1 = set()
         self.genes_overlapping_break2 = set()
 
-        SVTYPE.enforce(self.event_type)
+        if self.event_type:
+            SVTYPE.enforce(self.event_type)
         PROTOCOL.enforce(self.protocol)
         self.proximity = proximity
         self.fusion = None
@@ -534,18 +535,6 @@ def _gather_annotations(ref, bp, proximity=None):
 
     same = set()
     for a1, a2 in combinations:
-        """
-        if a1 != a2 and hasattr(a1, 'exons') != hasattr(a2, 'exons') and not bp.interchromosomal:
-            # one is a transcript, the other an intergenic region
-            # take the transcript if it covers both breakpoints
-            # this is due to the special case 'single transcript inversion'
-            if hasattr(a1, 'exons'):
-                if Interval.overlaps(bp.break1, a1) and Interval.overlaps(bp.break2, a1):
-                    a2 = a1
-            else:
-                if Interval.overlaps(bp.break1, a2) and Interval.overlaps(bp.break2, a2):
-                    a1 = a2
-        """
         if (a1, a2) in annotations:  # ignore duplicates
             continue
         try:
@@ -721,7 +710,7 @@ def annotate_events(
         for j, ann in enumerate(ann_list):
             ann.data[COLUMNS.annotation_id] = '{}-a{}'.format(ann.validation_id, j + 1)
             if ann.untemplated_seq is None:
-                if len(ann.break1) == 1 and len(ann.break2) == 1 and ann.event_type != SVTYPE.INS:
+                if len(ann.break1) == 1 and len(ann.break2) == 1 and ann.event_type and ann.event_type != SVTYPE.INS:
                     ann.untemplated_seq = ''
                     ann.data[COLUMNS.assumed_untemplated] = True
             else:

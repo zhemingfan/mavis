@@ -133,7 +133,7 @@ class EventCall(BreakpointPair):
         other libraries
         """
         return not all([
-            {self.event_type, self.compatible_type} & BreakpointPair.classify(self.source_evidence),
+            {self.event_type, self.compatible_type} & BreakpointPair.classify(self.source_evidence, self.source_evidence.distance),
             self.break1 & self.source_evidence.outer_window1,
             self.break2 & self.source_evidence.outer_window2,
             self.break1.chr == self.source_evidence.break1.chr,
@@ -544,7 +544,11 @@ def _call_by_spanning_reads(source_evidence, consumed_evidence):
         if not source_evidence.stranded:
             event.break1.strand = STRAND.NS
             event.break2.strand = STRAND.NS
-        for event_type in BreakpointPair.classify(source_evidence) & BreakpointPair.classify(event, distance=source_evidence.distance):
+
+        putative_types = BreakpointPair.classify(source_evidence, distance=source_evidence.distance)
+        putative_types = putative_types & BreakpointPair.classify(event, distance=source_evidence.distance)
+
+        for event_type in putative_types:
             try:
                 new_event = EventCall(
                     event.break1, event.break2,
@@ -611,21 +615,19 @@ def call_events(source_evidence):
             calls.append(call)
 
     # for ins/dup check for compatible call as well
-    putative_types = source_evidence.putative_event_types()
+    putative_types = source_evidence.putative_event_types - {SVTYPE.SUB}  # doesn't make sense to call substitutions by split/flanking
     if putative_types & {SVTYPE.INS, SVTYPE.DUP}:
         putative_types.update({SVTYPE.INS, SVTYPE.DUP})
 
-    for event_type in sorted(putative_types):
-        # try calling by split/flanking reads
-        type_consumed_evidence = set()
-        type_consumed_evidence.update(consumed_evidence)
+    # call by split reads
+    for call in _call_by_split_reads(source_evidence, putative_types, consumed_evidence):
+        consumed_evidence.update(call.support())
+        calls.append(call)
 
-        for call in _call_by_split_reads(source_evidence, event_type, type_consumed_evidence):
-            type_consumed_evidence.update(call.support())
-            calls.append(call)
-
+    # call by flanking pairs
+    for event_type in putative_types:
         try:
-            call = _call_by_flanking_pairs(source_evidence, event_type, type_consumed_evidence)
+            call = _call_by_flanking_pairs(source_evidence, event_type, consumed_evidence)
             if len(call.flanking_pairs) < source_evidence.min_flanking_pairs_resolution:
                 errors.add('flanking call ({}) failed to supply the minimum evidence required ({} < {})'.format(
                     event_type, len(call.flanking_pairs), source_evidence.min_flanking_pairs_resolution))
@@ -763,7 +765,7 @@ def _call_by_flanking_pairs(evidence, event_type, consumed_evidence=None):
     return call
 
 
-def _call_by_split_reads(evidence, event_type, consumed_evidence=None):
+def _call_by_split_reads(evidence, putative_event_types, consumed_evidence=None):
     """
     use split read evidence to resolve bp-level calls for breakpoint pairs (where possible)
     if a bp level call is not possible for one of the breakpoints then returns None
@@ -815,15 +817,6 @@ def _call_by_split_reads(evidence, event_type, consumed_evidence=None):
                 tgt_align += 1
         if links < evidence.min_linking_split_reads:
             continue
-        deletion_size = second - first - 1
-        if tgt_align >= evidence.min_double_aligned_to_estimate_insertion_size:
-            # we can estimate the fragment size
-            max_insert = evidence.read_length - 2 * evidence.min_softclipping
-            if event_type == SVTYPE.INS and max_insert < deletion_size:
-                continue
-        elif links >= evidence.min_double_aligned_to_estimate_insertion_size:
-            if deletion_size > evidence.max_expected_fragment_size and event_type == SVTYPE.INS:
-                continue
 
         # check if any of the aligned reads are 'double' aligned
         double_aligned = dict()
@@ -852,7 +845,7 @@ def _call_by_split_reads(evidence, event_type, consumed_evidence=None):
         # if no calls were resolved set the untemplated seq to None
         first_breakpoint = Breakpoint(evidence.break1.chr, first, strand=evidence.break1.strand, orient=evidence.break1.orient)
         second_breakpoint = Breakpoint(evidence.break2.chr, second, strand=evidence.break2.strand, orient=evidence.break2.orient)
-        bpp = BreakpointPair(first_breakpoint, second_breakpoint, event_type=event_type)
+        bpp = BreakpointPair(first_breakpoint, second_breakpoint)
 
         # ignore untemplated sequence since was not known previously
         if not any([call.break1 == bpp.break1 and call.break2 == bpp.break2 for call in resolved_calls]):
@@ -866,38 +859,52 @@ def _call_by_split_reads(evidence, event_type, consumed_evidence=None):
             key=lambda x: (len(x[1][0]) + len(x[1][1]), x[0]),
             reverse=True
         ):
-            try:
-                call = EventCall(
-                    call.break1, call.break2, evidence, event_type,
-                    call_method=CALL_METHOD.SPLIT, untemplated_seq=call.untemplated_seq
-                )
-                call.break1_split_reads.update(reads1 - consumed_evidence)
-                call.break2_split_reads.update(reads2 - consumed_evidence)
-                call.add_flanking_support(available_flanking_pairs)
-                if call.has_compatible:
-                    call.add_flanking_support(available_flanking_pairs, is_compatible=True)
-                # add the initial reads
-                for read in uncons_break1_reads - consumed_evidence:
-                    call.add_break1_split_read(read)
-                for read in uncons_break2_reads - consumed_evidence:
-                    call.add_break2_split_read(read)
-                linking_reads = len(call.linking_split_read_names())
-                if call.event_type == SVTYPE.INS:  # may not expect linking split reads for insertions
-                    linking_reads += len(call.flanking_pairs)
-                # does it pass the requirements?
-                if not any([
-                    len(call.break1_split_read_names(both=True)) < evidence.min_splits_reads_resolution,
-                    len(call.break2_split_read_names(both=True)) < evidence.min_splits_reads_resolution,
-                    len(call.break1_split_read_names()) < 1,
-                    len(call.break2_split_read_names()) < 1,
-                    linking_reads < evidence.min_linking_split_reads,
-                    call.event_type != event_type
-                ]) and call.complexity() >= evidence.min_call_complexity:
-                    linked_pairings.append(call)
-                    # consume the evidence
-                    consumed_evidence.update(call.break1_split_reads)
-                    consumed_evidence.update(call.break2_split_reads)
-            except ValueError:  # incompatible types
-                continue
+            exclude_ins = False
+            deletion_size = abs(call.break1.start - call.break2.start) - 1
+            if tgt_align >= evidence.min_double_aligned_to_estimate_insertion_size:
+                # we can estimate the fragment size
+                max_insert = evidence.read_length - 2 * evidence.min_softclipping
+                if max_insert < deletion_size:
+                    exclude_ins = True
+            elif all([
+                links >= evidence.min_double_aligned_to_estimate_insertion_size,
+                deletion_size > evidence.max_expected_fragment_size
+            ]):
+                exclude_ins = True
+            for event_type in putative_event_types & BreakpointPair.classify(call, distance=evidence.distance):
+                if exclude_ins and event_type == SVTYPE.INS:
+                    continue
+                try:
+                    call = EventCall(
+                        call.break1, call.break2, evidence, event_type,
+                        call_method=CALL_METHOD.SPLIT, untemplated_seq=call.untemplated_seq
+                    )
+                    call.break1_split_reads.update(reads1 - consumed_evidence)
+                    call.break2_split_reads.update(reads2 - consumed_evidence)
+                    call.add_flanking_support(available_flanking_pairs)
+                    if call.has_compatible:
+                        call.add_flanking_support(available_flanking_pairs, is_compatible=True)
+                    # add the initial reads
+                    for read in uncons_break1_reads - consumed_evidence:
+                        call.add_break1_split_read(read)
+                    for read in uncons_break2_reads - consumed_evidence:
+                        call.add_break2_split_read(read)
+                    linking_reads = len(call.linking_split_read_names())
+                    if call.event_type == SVTYPE.INS:  # may not expect linking split reads for insertions
+                        linking_reads += len(call.flanking_pairs)
+                    # does it pass the requirements?
+                    if not any([
+                        len(call.break1_split_read_names(both=True)) < evidence.min_splits_reads_resolution,
+                        len(call.break2_split_read_names(both=True)) < evidence.min_splits_reads_resolution,
+                        len(call.break1_split_read_names()) < 1,
+                        len(call.break2_split_read_names()) < 1,
+                        linking_reads < evidence.min_linking_split_reads,
+                    ]) and call.complexity() >= evidence.min_call_complexity:
+                        linked_pairings.append(call)
+                        # consume the evidence
+                        consumed_evidence.update(call.break1_split_reads)
+                        consumed_evidence.update(call.break2_split_reads)
+                except ValueError:  # incompatible types
+                    continue
 
     return linked_pairings

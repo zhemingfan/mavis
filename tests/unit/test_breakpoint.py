@@ -303,59 +303,53 @@ class TestClassifyBreakpointPair(unittest.TestCase):
         self.assertEqual({SVTYPE.DUP}, BreakpointPair.classify(b))
 
     def test_deletion_or_insertion(self):
+        expected = {SVTYPE.DEL, SVTYPE.INS, SVTYPE.SUB}
         b = BreakpointPair(
             Breakpoint(1, 1, 2, strand=STRAND.POS, orient=ORIENT.LEFT),
             Breakpoint(1, 10, 11, strand=STRAND.POS, orient=ORIENT.RIGHT)
         )
-        self.assertEqual(sorted([SVTYPE.DEL, SVTYPE.INS]),
-                         sorted(BreakpointPair.classify(b)))
+        self.assertEqual(expected, BreakpointPair.classify(b))
 
         b = BreakpointPair(
             Breakpoint(1, 1, 2, strand=STRAND.POS, orient=ORIENT.LEFT),
             Breakpoint(1, 10, 11, strand=STRAND.NS, orient=ORIENT.RIGHT),
             opposing_strands=False
         )
-        self.assertEqual(sorted([SVTYPE.DEL, SVTYPE.INS]),
-                         sorted(BreakpointPair.classify(b)))
+        self.assertEqual(expected, BreakpointPair.classify(b))
 
         b = BreakpointPair(
             Breakpoint(1, 1, 2, strand=STRAND.NEG, orient=ORIENT.LEFT),
             Breakpoint(1, 10, 11, strand=STRAND.NEG, orient=ORIENT.RIGHT)
         )
-        self.assertEqual(sorted([SVTYPE.DEL, SVTYPE.INS]),
-                         sorted(BreakpointPair.classify(b)))
+        self.assertEqual(expected, BreakpointPair.classify(b))
 
         b = BreakpointPair(
             Breakpoint(1, 1, 2, strand=STRAND.NEG, orient=ORIENT.LEFT),
             Breakpoint(1, 10, 11, strand=STRAND.NS, orient=ORIENT.RIGHT),
             opposing_strands=False
         )
-        self.assertEqual(sorted([SVTYPE.DEL, SVTYPE.INS]),
-                         sorted(BreakpointPair.classify(b)))
+        self.assertEqual(expected, BreakpointPair.classify(b))
 
         b = BreakpointPair(
             Breakpoint(1, 1, 2, strand=STRAND.NS, orient=ORIENT.LEFT),
             Breakpoint(1, 10, 11, strand=STRAND.POS, orient=ORIENT.RIGHT),
             opposing_strands=False
         )
-        self.assertEqual(sorted([SVTYPE.DEL, SVTYPE.INS]),
-                         sorted(BreakpointPair.classify(b)))
+        self.assertEqual(expected, BreakpointPair.classify(b))
 
         b = BreakpointPair(
             Breakpoint(1, 1, 2, strand=STRAND.NS, orient=ORIENT.LEFT),
             Breakpoint(1, 10, 11, strand=STRAND.NEG, orient=ORIENT.RIGHT),
             opposing_strands=False
         )
-        self.assertEqual(sorted([SVTYPE.DEL, SVTYPE.INS]),
-                         sorted(BreakpointPair.classify(b)))
+        self.assertEqual(expected, BreakpointPair.classify(b))
 
         b = BreakpointPair(
             Breakpoint(1, 1, 2, strand=STRAND.NS, orient=ORIENT.LEFT),
             Breakpoint(1, 10, 11, strand=STRAND.NS, orient=ORIENT.RIGHT),
             opposing_strands=False
         )
-        self.assertEqual(sorted([SVTYPE.DEL, SVTYPE.INS]),
-                         sorted(BreakpointPair.classify(b)))
+        self.assertEqual(expected, BreakpointPair.classify(b))
 
     def test_insertion(self):
         b = BreakpointPair(
@@ -363,7 +357,7 @@ class TestClassifyBreakpointPair(unittest.TestCase):
             Breakpoint(1, 2, 2, strand=STRAND.NS, orient=ORIENT.RIGHT),
             opposing_strands=False
         )
-        self.assertEqual(sorted([SVTYPE.INS]), sorted(BreakpointPair.classify(b)))
+        self.assertEqual({SVTYPE.INS}, BreakpointPair.classify(b))
 
     def test_no_type(self):
         b = BreakpointPair(
@@ -379,21 +373,29 @@ class TestClassifyBreakpointPair(unittest.TestCase):
             Breakpoint(1, 3, 3, strand=STRAND.NS, orient=ORIENT.RIGHT),
             opposing_strands=False, untemplated_seq=''
         )
-        self.assertEqual(sorted([SVTYPE.DEL]), sorted(BreakpointPair.classify(b)))
+        self.assertEqual({SVTYPE.DEL}, BreakpointPair.classify(b))
 
     def test_deletion_with_useq(self):
         bpp = BreakpointPair(Breakpoint('1', 6964, orient='L'), Breakpoint('1', 7040, orient='R'), opposing=False, untemplated_seq='CCCT')
-        self.assertEqual(sorted([SVTYPE.DEL, SVTYPE.INS]), sorted(BreakpointPair.classify(bpp)))
+        self.assertEqual({SVTYPE.DEL}, BreakpointPair.classify(bpp))
 
         def distance(x, y):
             return Interval(abs(x - y))
         net_size = BreakpointPair.net_size(bpp, distance)
         self.assertEqual(Interval(-71), net_size)
-        self.assertEqual(sorted([SVTYPE.DEL]), sorted(BreakpointPair.classify(bpp, distance)))
+        self.assertEqual({SVTYPE.DEL}, BreakpointPair.classify(bpp, distance))
 
     def test_deletion_no_distance_error(self):
         bpp = BreakpointPair(Breakpoint('1', 7039, orient='L'), Breakpoint('1', 7040, orient='R'), opposing=False)
-        self.assertEqual(sorted([SVTYPE.INS]), sorted(BreakpointPair.classify(bpp)))
+        self.assertEqual({SVTYPE.INS}, BreakpointPair.classify(bpp))
+
+    def test_substitution_snp(self):
+        bpp = BreakpointPair(Breakpoint('1', 7039, orient='L'), Breakpoint('1', 7041, orient='R'), untemplated_seq='A')
+        self.assertEqual({SVTYPE.SUB}, BreakpointPair.classify(bpp))
+
+    def test_substitution_large(self):
+        bpp = BreakpointPair(Breakpoint('1', 7039, orient='L'), Breakpoint('1', 7041, orient='R'), untemplated_seq='A')
+        self.assertEqual({SVTYPE.SUB}, BreakpointPair.classify(bpp))
 
 
 class TestNetSize(unittest.TestCase):

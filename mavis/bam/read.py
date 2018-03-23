@@ -408,7 +408,7 @@ def orientation_supports_type(read, event_type):
             - ``True`` - the read pair is in the correct orientation for this event type
             - ``False`` - the read is not in the correct orientation
     """
-    if event_type == SVTYPE.DEL or event_type == SVTYPE.INS:
+    if event_type in {SVTYPE.DEL, SVTYPE.INS, SVTYPE.SUB}:
         if read_pair_type(read) != READ_PAIR_TYPE.LR:
             return False
     elif event_type == SVTYPE.TRANS:

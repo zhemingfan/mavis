@@ -273,10 +273,21 @@ class BreakpointPair:
                         or (pair.break1.orient == ORIENT.RIGHT and pair.break2.orient == ORIENT.RIGHT):
                     raise InvalidRearrangement(pair)
                 elif pair.break1.orient == ORIENT.LEFT or pair.break2.orient == ORIENT.RIGHT:
-                    if len(pair.break1) == 1 and len(pair.break2) == 1 and abs(pair.break1.start - pair.break2.start) < 2:
-                        if pair.untemplated_seq == '':
-                            return set()
-                        return {SVTYPE.INS}
+                    if len(pair.break1) == 1 and len(pair.break2) == 1:  # exact breakpoint call
+
+                        deletion_size = abs(pair.break1.start - pair.break2.start) - 1
+
+                        if pair.untemplated_seq is not None:
+                            insertion_size = len(pair.untemplated_seq)
+                            if deletion_size < insertion_size:
+                                return {SVTYPE.INS}
+                            elif deletion_size > insertion_size:
+                                return {SVTYPE.DEL}
+                            elif deletion_size < 1:
+                                return set()
+                            return {SVTYPE.SUB}
+                        elif deletion_size < 1:
+                            return {SVTYPE.INS}
                     elif pair.untemplated_seq == '':
                         return {SVTYPE.DEL}
                     elif distance:
@@ -287,7 +298,7 @@ class BreakpointPair:
                                 return {SVTYPE.DEL}
                         except ValueError:
                             pass
-                    return {SVTYPE.DEL, SVTYPE.INS}
+                    return {SVTYPE.DEL, SVTYPE.INS, SVTYPE.SUB}
                 elif pair.break1.orient == ORIENT.RIGHT or pair.break2.orient == ORIENT.LEFT:
                     return {SVTYPE.DUP}
         else:  # interchromosomal

@@ -55,7 +55,7 @@ def main(
             COLUMNS.fusion_sequence_fasta_id: None,
             COLUMNS.fusion_splicing_pattern: None
         },
-        expand_strand=False, expand_orient=False, expand_svtype=False
+        expand_strand=False, expand_orient=False
     ))
     log('read {} breakpoint pairs'.format(len(bpps)))
 

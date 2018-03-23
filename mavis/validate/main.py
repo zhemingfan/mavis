@@ -191,7 +191,7 @@ def main(
     for index, evidence in enumerate(evidence_clusters):
         print()
         log('({} of {}) calling events for: {} {} (tracking_id: {})'.format(
-            index + 1, len(evidence_clusters), evidence.cluster_id, evidence.putative_event_types(), evidence.tracking_id))
+            index + 1, len(evidence_clusters), evidence.cluster_id, evidence.putative_event_types, evidence.tracking_id))
         log('source:', evidence, time_stamp=False)
         calls = []
         failure_comment = None
