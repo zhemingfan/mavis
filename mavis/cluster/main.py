@@ -1,23 +1,24 @@
 import inspect
 import itertools
 import os
-from shortuuid import uuid
 import time
 
-from .cluster import merge_breakpoint_pairs
-from .constants import DEFAULTS
+from shortuuid import uuid
+
 from ..constants import COLUMNS
 from ..util import (
+    LOG,
     filter_on_overlap,
     filter_uninformative,
     generate_complete_stamp,
-    LOG,
     log_arguments,
     mkdirp,
     output_tabbed_file,
     read_inputs,
     write_bed_file,
 )
+from .cluster import merge_breakpoint_pairs
+from .constants import DEFAULTS
 
 
 def split_clusters(
@@ -248,5 +249,5 @@ def main(
         write_bed_summary=True,
     )
 
-    generate_complete_stamp(output, LOG, start_time=start_time, prefix='MAVIS-{}.'.format(batch_id))
+    generate_complete_stamp(output, LOG, start_time=start_time)
     return output_files

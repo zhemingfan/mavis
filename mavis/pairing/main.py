@@ -2,11 +2,11 @@ import itertools
 import os
 import time
 
-from .pairing import inferred_equivalent, product_key, pair_by_distance
-from .constants import DEFAULTS
 from ..annotate.constants import SPLICE_TYPE
 from ..constants import CALL_METHOD, COLUMNS, PROTOCOL, SVTYPE
-from ..util import generate_complete_stamp, LOG, output_tabbed_file, read_inputs
+from ..util import LOG, generate_complete_stamp, output_tabbed_file, read_inputs
+from .constants import DEFAULTS
+from .pairing import inferred_equivalent, pair_by_distance, product_key
 
 
 def main(

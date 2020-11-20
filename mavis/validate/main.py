@@ -8,16 +8,24 @@ import warnings
 import pysam
 from shortuuid import uuid
 
-from .call import call_events
-from .constants import DEFAULTS, PASS_FILENAME
-from .evidence import GenomeEvidence, TranscriptomeEvidence
-from ..align import align_sequences, select_contig_alignments, SUPPORTED_ALIGNER
+from ..align import SUPPORTED_ALIGNER, align_sequences, select_contig_alignments
 from ..annotate.base import BioInterval
 from ..bam import cigar as _cigar
 from ..bam.cache import BamCache
 from ..breakpoint import BreakpointPair
-from ..constants import CALL_METHOD, COLUMNS, MavisNamespace, PROTOCOL
-from ..util import filter_on_overlap, LOG, mkdirp, output_tabbed_file, read_inputs, write_bed_file
+from ..constants import CALL_METHOD, COLUMNS, PROTOCOL, MavisNamespace
+from ..util import (
+    LOG,
+    filter_on_overlap,
+    generate_complete_stamp,
+    mkdirp,
+    output_tabbed_file,
+    read_inputs,
+    write_bed_file,
+)
+from .call import call_events
+from .constants import DEFAULTS, PASS_FILENAME
+from .evidence import GenomeEvidence, TranscriptomeEvidence
 
 
 def main(
@@ -377,3 +385,4 @@ def main(
             fh.write('load {} name="{}"\n'.format(evidence_bed, 'evidence windows'))
             fh.write('load {} name="{}"\n'.format(raw_evidence_bam, 'raw evidence'))
             fh.write('load {} name="{} {} input"\n'.format(bam_file, library, protocol))
+        generate_complete_stamp(output, LOG, start_time=start_time)

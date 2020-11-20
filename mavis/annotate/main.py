@@ -1,29 +1,28 @@
+import hashlib
 import json
 import os
 import re
 import time
 import warnings
-import hashlib
 
-from .constants import DEFAULTS, PASS_FILENAME
-from .genomic import PreTranscript
-from .variant import (
-    annotate_events,
-    choose_more_annotated,
-    choose_transcripts_by_priority,
-    call_protein_indel,
-    flatten_fusion_transcript,
-    flatten_fusion_translation,
-)
-from .fusion import determine_prime
 from ..cluster.constants import DEFAULTS as CLUSTER_DEFAULTS
 from ..constants import COLUMNS, PRIME, PROTOCOL, sort_columns
 from ..error import DrawingFitError, NotSpecifiedError
 from ..illustrate.constants import DEFAULTS as ILLUSTRATION_DEFAULTS
 from ..illustrate.constants import DiagramSettings
 from ..illustrate.diagram import draw_sv_summary_diagram
-from ..util import LOG, mkdirp, read_inputs
-
+from ..util import LOG, generate_complete_stamp, mkdirp, read_inputs
+from .constants import DEFAULTS, PASS_FILENAME
+from .fusion import determine_prime
+from .genomic import PreTranscript
+from .variant import (
+    annotate_events,
+    call_protein_indel,
+    choose_more_annotated,
+    choose_transcripts_by_priority,
+    flatten_fusion_transcript,
+    flatten_fusion_translation,
+)
 
 ACCEPTED_FILTERS = {
     'choose_more_annotated': choose_more_annotated,
@@ -307,6 +306,7 @@ def main(
                 rows = [ann_row]
             for row in rows:
                 tabbed_fh.write('\t'.join([str(row.get(k, None)) for k in header]) + '\n')
+        generate_complete_stamp(output, LOG, start_time=start_time)
     finally:
         LOG('closing:', tabbed_output_file)
         tabbed_fh.close()
