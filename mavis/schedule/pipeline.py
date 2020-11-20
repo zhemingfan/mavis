@@ -1,23 +1,23 @@
-from configparser import ConfigParser, ExtendedInterpolation
 import os
 import re
 import shutil
 import subprocess
+from configparser import ConfigParser, ExtendedInterpolation
 
 from shortuuid import uuid
 
-from ..cluster import constants as _CLUSTER
-from ..constants import SUBCOMMAND, PROTOCOL, EXIT_ERROR, EXIT_OK, EXIT_INCOMPLETE
-from ..tools import convert_tool_output
-from ..util import mkdirp, output_tabbed_file, LOG, DEVNULL
-from ..validate import constants as _VALIDATE
 from ..annotate import constants as _ANNOTATE
 from ..annotate import file_io as _file_io
+from ..cluster import constants as _CLUSTER
+from ..constants import EXIT_ERROR, EXIT_INCOMPLETE, EXIT_OK, PROTOCOL, SUBCOMMAND
 from ..summary import constants as _SUMMARY
-from .job import Job, ArrayJob, LogFile, TorqueArrayJob
-from .scheduler import SlurmScheduler, TorqueScheduler, SgeScheduler, consecutive_ranges
+from ..tools import convert_tool_output
+from ..util import DEVNULL, LOG, mkdirp, output_tabbed_file
+from ..validate import constants as _VALIDATE
+from .constants import JOB_STATUS, OPTIONS, SCHEDULER, STD_OPTIONS
+from .job import ArrayJob, Job, LogFile, TorqueArrayJob
 from .local import LocalJob, LocalScheduler
-from .constants import JOB_STATUS, STD_OPTIONS, OPTIONS, SCHEDULER
+from .scheduler import SgeScheduler, SlurmScheduler, TorqueScheduler, consecutive_ranges
 
 PROGNAME = shutil.which('mavis')
 SHEBANG = '#!/bin/bash'
@@ -347,13 +347,11 @@ echo "start: $START_TIME end: $END_TIME" > {}/MAVIS-${}.COMPLETE
                 os.path.join(base, SUBCOMMAND.CLUSTER)
             )  # creates the clustering output dir
             args = cluster_args(config, libconf)
-            args.update({'batch_id': pipeline.batch_id, 'output': cluster_output})
+            args.update({'output': cluster_output})
             args['split_only'] = SUBCOMMAND.CLUSTER in config.get('skip_stage', [])
             args['inputs'] = libconf.inputs
             LOG('clustering', '(split only)' if args['split_only'] else '', time_stamp=True)
-            clustering_log = os.path.join(
-                args['output'], 'MC_{}_{}.log'.format(libconf.library, pipeline.batch_id)
-            )
+            clustering_log = os.path.join(args['output'], 'MC_{}.log'.format(libconf.library))
             LOG('writing:', clustering_log, time_stamp=True)
             args['log'] = clustering_log
             clustered_files = _main(cls.format_args(SUBCOMMAND.CLUSTER, args))
@@ -364,11 +362,7 @@ echo "start: $START_TIME end: $END_TIME" > {}/MAVIS-${}.COMPLETE
             if SUBCOMMAND.VALIDATE not in config.skip_stage:
                 mkdirp(os.path.join(base, SUBCOMMAND.VALIDATE))
                 for task_ident in range(1, len(clustered_files) + 1):
-                    mkdirp(
-                        os.path.join(
-                            base, SUBCOMMAND.VALIDATE, '{}-{}'.format(pipeline.batch_id, task_ident)
-                        )
-                    )
+                    mkdirp(os.path.join(base, SUBCOMMAND.VALIDATE, 'batch-{}'.format(task_ident)))
                 args = validate_args(config, libconf)
 
                 script_name = os.path.join(base, SUBCOMMAND.VALIDATE, 'submit.sh')
@@ -385,12 +379,10 @@ echo "start: $START_TIME end: $END_TIME" > {}/MAVIS-${}.COMPLETE
 
                     for task_ident in range(1, len(clustered_files) + 1):
                         args['inputs'] = [
-                            os.path.join(
-                                cluster_output, '{}-{}.tab'.format(pipeline.batch_id, task_ident)
-                            )
+                            os.path.join(cluster_output, 'batch-{}.tab'.format(task_ident))
                         ]
                         args['output'] = os.path.join(
-                            base, SUBCOMMAND.VALIDATE, '{}-{}'.format(pipeline.batch_id, task_ident)
+                            base, SUBCOMMAND.VALIDATE, 'batch-{}'.format(task_ident)
                         )
                         job_name = 'MV_{}_{}-{}'.format(
                             libconf.library, pipeline.batch_id, task_ident
@@ -410,23 +402,21 @@ echo "start: $START_TIME end: $END_TIME" > {}/MAVIS-${}.COMPLETE
                 else:
                     args['inputs'] = os.path.join(
                         cluster_output,
-                        '{}-${}.tab'.format(pipeline.batch_id, scheduler.ENV_TASK_IDENT),
+                        'batch-${}.tab'.format(scheduler.ENV_TASK_IDENT),
                     )
                     args['output'] = os.path.join(
                         base,
                         SUBCOMMAND.VALIDATE,
-                        '{}-${}'.format(pipeline.batch_id, scheduler.ENV_TASK_IDENT),
+                        'batch-${}'.format(scheduler.ENV_TASK_IDENT),
                     )
                     aligner_path = shutil.which(args['aligner'].split(' ')[0])
                     job_class = ArrayJob if scheduler.NAME != SCHEDULER.TORQUE else TorqueArrayJob
                     validate_job = job_class(
                         stage=SUBCOMMAND.VALIDATE,
                         task_list=len(clustered_files),
-                        output_dir=os.path.join(
-                            base, SUBCOMMAND.VALIDATE, '{}-{{task_ident}}'.format(pipeline.batch_id)
-                        ),
+                        output_dir=os.path.join(base, SUBCOMMAND.VALIDATE, r'batch-{task_ident}'),
                         script=script_name,
-                        name='MV_{}_{}'.format(libconf.library, pipeline.batch_id),
+                        name='MV_{}_{}'.format(pipeline.batch_id, libconf.library),
                         **job_options
                     )
                     pipeline.write_submission_script(
@@ -438,11 +428,7 @@ echo "start: $START_TIME end: $END_TIME" > {}/MAVIS-${}.COMPLETE
             # make an annotation job for each validation/cluster job/file
             mkdirp(os.path.join(base, SUBCOMMAND.ANNOTATE))
             for task_ident in range(1, len(clustered_files) + 1):
-                mkdirp(
-                    os.path.join(
-                        base, SUBCOMMAND.ANNOTATE, '{}-{}'.format(pipeline.batch_id, task_ident)
-                    )
-                )
+                mkdirp(os.path.join(base, SUBCOMMAND.ANNOTATE, 'batch-{}'.format(task_ident)))
             args = annotate_args(config, libconf)
 
             script_name = os.path.join(base, SUBCOMMAND.ANNOTATE, 'submit.sh')
@@ -464,17 +450,15 @@ echo "start: $START_TIME end: $END_TIME" > {}/MAVIS-${}.COMPLETE
                             os.path.join(
                                 base,
                                 SUBCOMMAND.VALIDATE,
-                                '{}-{}'.format(pipeline.batch_id, task_ident),
+                                'batch-{}'.format(task_ident),
                                 _VALIDATE.PASS_FILENAME,
                             )
                         ]
                     else:
                         args['inputs'] = [
-                            os.path.join(
-                                cluster_output, '{}-{}.tab'.format(pipeline.batch_id, task_ident)
-                            )
+                            os.path.join(cluster_output, 'batch-{}.tab'.format(task_ident))
                         ]
-                    job_name = 'MA_{}_{}-{}'.format(libconf.library, pipeline.batch_id, task_ident)
+                    job_name = 'MA_{}_batch-{}'.format(libconf.library, task_ident)
                     args['log'] = os.path.join(args['output'], 'job-{name}-{job_ident}.log')
                     annotate_job = LocalJob(
                         stage=SUBCOMMAND.ANNOTATE,
@@ -496,7 +480,7 @@ echo "start: $START_TIME end: $END_TIME" > {}/MAVIS-${}.COMPLETE
                 args['output'] = os.path.join(
                     base,
                     SUBCOMMAND.ANNOTATE,
-                    '{}-${}'.format(pipeline.batch_id, scheduler.ENV_TASK_IDENT),
+                    'batch-${}'.format(scheduler.ENV_TASK_IDENT),
                 )
                 # annotate 'clustered' files if the pipeline does not include the validation step
                 if SUBCOMMAND.VALIDATE not in config.skip_stage:
@@ -504,7 +488,7 @@ echo "start: $START_TIME end: $END_TIME" > {}/MAVIS-${}.COMPLETE
                         os.path.join(
                             base,
                             SUBCOMMAND.VALIDATE,
-                            '{}-${}'.format(pipeline.batch_id, scheduler.ENV_TASK_IDENT),
+                            'batch-${}'.format(scheduler.ENV_TASK_IDENT),
                             _VALIDATE.PASS_FILENAME,
                         )
                     ]
@@ -512,7 +496,7 @@ echo "start: $START_TIME end: $END_TIME" > {}/MAVIS-${}.COMPLETE
                     args['inputs'] = [
                         os.path.join(
                             cluster_output,
-                            '{}-${}.tab'.format(pipeline.batch_id, scheduler.ENV_TASK_IDENT),
+                            'batch-${}.tab'.format(scheduler.ENV_TASK_IDENT),
                         )
                     ]
 
@@ -522,9 +506,7 @@ echo "start: $START_TIME end: $END_TIME" > {}/MAVIS-${}.COMPLETE
                     task_list=len(clustered_files),
                     script=script_name,
                     name='MA_{}_{}'.format(libconf.library, pipeline.batch_id),
-                    output_dir=os.path.join(
-                        base, SUBCOMMAND.ANNOTATE, '{}-{{task_ident}}'.format(pipeline.batch_id)
-                    ),
+                    output_dir=os.path.join(base, SUBCOMMAND.ANNOTATE, r'batch-{task_ident}'),
                     **job_options
                 )
                 pipeline.write_submission_script(SUBCOMMAND.ANNOTATE, annotate_job, args)

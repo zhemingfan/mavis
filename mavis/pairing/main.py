@@ -18,7 +18,7 @@ def main(
     contig_call_distance=DEFAULTS.contig_call_distance,
     spanning_call_distance=DEFAULTS.spanning_call_distance,
     start_time=int(time.time()),
-    **kwargs
+    **kwargs,
 ):
     """
     Args:
@@ -93,7 +93,15 @@ def main(
         bpp.data[COLUMNS.inferred_pairing] = ''
 
         if product_key(bpp) in bpp_by_product_key:
-            raise KeyError('duplicate bpp is not unique within lib', product_key(bpp))
+            diffs = {}
+            other = bpp_by_product_key[product_key(bpp)]
+            for key in (set(other.data.keys()) | set(bpp.data.keys())) - {'line_no'}:
+                if bpp.data.get(key) != other.data.get(key):
+                    diffs[key] = (bpp.data.get(key), other.data.get(key))
+            if diffs:
+                raise KeyError(
+                    f'duplicate bpp ({product_key(bpp)}) is not unique within lib (diffs: {diffs})'
+                )
         bpp_by_product_key[product_key(bpp)] = bpp
 
     distance_pairings = {}
@@ -139,3 +147,4 @@ def main(
 
     fname = os.path.join(output, 'mavis_paired_{}.tab'.format('_'.join(sorted(list(libraries)))))
     output_tabbed_file(bpps, fname)
+    generate_complete_stamp(output, LOG)

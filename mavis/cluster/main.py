@@ -22,7 +22,7 @@ from .constants import DEFAULTS
 
 
 def split_clusters(
-    clusters, outputdir, batch_id, min_clusters_per_file=0, max_files=1, write_bed_summary=True
+    clusters, outputdir, min_clusters_per_file=0, max_files=1, write_bed_summary=True
 ):
     """
     For a set of clusters creates a bed file representation of all clusters.
@@ -56,7 +56,7 @@ def split_clusters(
     output_files = []
     for i, job in enumerate(jobs):
         # generate an output file
-        filename = os.path.join(outputdir, '{}-{}.tab'.format(batch_id, i + 1))
+        filename = os.path.join(outputdir, 'batch-{}.tab'.format(i + 1))
         output_files.append(filename)
         output_tabbed_file(job, filename)
     return output_files
@@ -78,7 +78,6 @@ def main(
     max_proximity=DEFAULTS.max_proximity,
     min_clusters_per_file=DEFAULTS.min_clusters_per_file,
     max_files=DEFAULTS.max_files,
-    batch_id=None,
     split_only=False,
     start_time=int(time.time()),
     **kwargs
@@ -107,7 +106,6 @@ def main(
         masking.load()
 
     # output files
-    batch_id = 'batch-' + str(uuid()) if batch_id is None else batch_id
     filtered_output = os.path.join(output, 'filtered_pairs.tab')
     cluster_assign_output = os.path.join(output, 'cluster_assignment.tab')
 
@@ -243,7 +241,6 @@ def main(
     output_files = split_clusters(
         breakpoint_pairs,
         output,
-        batch_id,
         min_clusters_per_file=min_clusters_per_file,
         max_files=max_files,
         write_bed_summary=True,

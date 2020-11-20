@@ -1,34 +1,35 @@
 #!python
 import argparse
 import logging
-import platform
 import os
-import time
+import platform
 import sys
+import time
 
 import tab
 
 from . import __version__
-from .align import get_aligner_version
 from . import annotate as _annotate
-from .annotate import main as annotate_main
-from .cluster.constants import DEFAULTS as CLUSTER_DEFAULTS
-from .cluster import main as cluster_main
 from . import config as _config
-from .constants import SUBCOMMAND, PROTOCOL, float_fraction, EXIT_OK
+from . import util as _util
+from .align import get_aligner_version
+from .annotate import main as annotate_main
+from .cluster import main as cluster_main
+from .cluster.constants import DEFAULTS as CLUSTER_DEFAULTS
+from .constants import EXIT_OK, PROTOCOL, SUBCOMMAND, float_fraction
 from .error import DrawingFitError
-from .illustrate.constants import DEFAULTS as ILLUSTRATION_DEFAULTS, DiagramSettings
+from .illustrate.constants import DEFAULTS as ILLUSTRATION_DEFAULTS
+from .illustrate.constants import DiagramSettings
 from .illustrate.diagram import draw_multi_transcript_overlay
 from .illustrate.scatter import bam_to_scatter
-from .pairing.constants import DEFAULTS as PAIRING_DEFAULTS
 from .pairing import main as pairing_main
-from .summary.constants import DEFAULTS as SUMMARY_DEFAULTS
-from .summary import main as summary_main
-from .tools import convert_tool_output, SUPPORTED_TOOL
-from . import util as _util
-from .validate.constants import DEFAULTS as VALIDATION_DEFAULTS
-from .validate import main as validate_main
+from .pairing.constants import DEFAULTS as PAIRING_DEFAULTS
 from .schedule import pipeline as _pipeline
+from .summary import main as summary_main
+from .summary.constants import DEFAULTS as SUMMARY_DEFAULTS
+from .tools import SUPPORTED_TOOL, convert_tool_output
+from .validate import main as validate_main
+from .validate.constants import DEFAULTS as VALIDATION_DEFAULTS
 
 
 def check_overlay_args(args, parser):
@@ -366,9 +367,6 @@ def main(argv=None):
         list(CLUSTER_DEFAULTS.keys()) + ['masking', 'annotations'], optional[SUBCOMMAND.CLUSTER]
     )
     optional[SUBCOMMAND.CLUSTER].add_argument(
-        '--batch_id', help='batch id to use for prefix of split files', type=_config.nameable_string
-    )
-    optional[SUBCOMMAND.CLUSTER].add_argument(
         '--split_only',
         help='Cluster the files or simply split them without clustering',
         type=tab.cast_boolean,
@@ -566,23 +564,9 @@ def main(argv=None):
             overlay_main(**args)
         elif command == SUBCOMMAND.CONFIG:
             _config.generate_config(args, parser, log=_util.LOG)
-        elif command == SUBCOMMAND.SCHEDULE:
-            build_file = os.path.join(args.output, 'build.cfg')
-            args.discard('output')
-            pipeline = _pipeline.Pipeline.read_build_file(build_file)
-            try:
-                code = pipeline.check_status(log=_util.LOG, **args)
-            finally:
-                _util.LOG('rewriting:', build_file)
-                pipeline.write_build_file(build_file)
-            if code != EXIT_OK:
-                sys.exit(code)  # EXIT
         else:  # PIPELINE
             config.reference = rfile_args
-            pipeline = _pipeline.Pipeline.build(config)
-            build_file = os.path.join(config.output, 'build.cfg')
-            _util.LOG('writing:', build_file)
-            pipeline.write_build_file(build_file)
+            _pipeline.Pipeline.build(config)
 
         duration = int(time.time()) - start_time
         hours = duration - duration % 3600

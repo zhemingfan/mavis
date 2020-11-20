@@ -1,10 +1,13 @@
-from functools import partial
 import os
 import re
 import time
+from functools import partial
 
 import tab
 
+from ..constants import CALL_METHOD, COLUMNS, PROTOCOL, SVTYPE
+from ..pairing.constants import DEFAULTS as PAIRING_DEFAULTS
+from ..util import LOG, generate_complete_stamp, output_tabbed_file, read_inputs, soft_cast
 from .constants import DEFAULTS, HOMOPOLYMER_MIN_LENGTH
 from .summary import (
     annotate_dgv,
@@ -14,9 +17,6 @@ from .summary import (
     get_pairing_state,
     group_by_distance,
 )
-from ..constants import CALL_METHOD, COLUMNS, PROTOCOL, SVTYPE
-from ..pairing.constants import DEFAULTS as PAIRING_DEFAULTS
-from ..util import generate_complete_stamp, LOG, output_tabbed_file, read_inputs, soft_cast
 
 
 def soft_cast_null(value):
@@ -401,3 +401,4 @@ def main(
             ):
                 lib_rows.append(row)
         output_tabbed_file(lib_rows, filename, header=output_columns)
+    generate_complete_stamp(output, LOG)
