@@ -1,22 +1,19 @@
 import itertools
 import os
 import time
+from typing import Dict, List
 
 from ..annotate.constants import SPLICE_TYPE
+from ..annotate.file_io import ReferenceFile
 from ..constants import CALL_METHOD, COLUMNS, PROTOCOL, SVTYPE
 from ..util import LOG, generate_complete_stamp, output_tabbed_file, read_inputs
-from .constants import DEFAULTS
 from .pairing import inferred_equivalent, pair_by_distance, product_key
 
 
 def main(
-    inputs,
-    output,
-    annotations,
-    flanking_call_distance=DEFAULTS.flanking_call_distance,
-    split_call_distance=DEFAULTS.split_call_distance,
-    contig_call_distance=DEFAULTS.contig_call_distance,
-    spanning_call_distance=DEFAULTS.spanning_call_distance,
+    inputs: List[str],
+    output: str,
+    config: Dict,
     start_time=int(time.time()),
     **kwargs,
 ):
@@ -24,17 +21,15 @@ def main(
     Args:
         inputs (List[str]): list of input files to read
         output (str): path to the output directory
-        flanking_call_distance (int): pairing distance for pairing with an event called by [flanking read pair](/glossary/#flanking-read-pair)
-        split_call_distance (int): pairing distance for pairing with an event called by [split read](/glossary/#split-read)
-        contig_call_distance (int): pairing distance for pairing with an event called by contig or [spanning read](/glossary/#spanning-read)
     """
-    annotations.load()
+    annotations = ReferenceFile.load_from_config(config, 'annotations', eager_load=True)
+
     # load the file
     distances = {
-        CALL_METHOD.FLANK: flanking_call_distance,
-        CALL_METHOD.SPLIT: split_call_distance,
-        CALL_METHOD.CONTIG: contig_call_distance,
-        CALL_METHOD.SPAN: spanning_call_distance,
+        CALL_METHOD.FLANK: config['pairing']['flanking_call_distance'],
+        CALL_METHOD.SPLIT: config['pairing']['split_call_distance'],
+        CALL_METHOD.CONTIG: config['pairing']['contig_call_distance'],
+        CALL_METHOD.SPAN: config['pairing']['spanning_call_distance'],
     }
 
     bpps = []

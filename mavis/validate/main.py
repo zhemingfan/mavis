@@ -4,16 +4,18 @@ import os
 import re
 import time
 import warnings
+from typing import Dict, List
 
 import pysam
 from shortuuid import uuid
 
 from ..align import SUPPORTED_ALIGNER, align_sequences, select_contig_alignments
 from ..annotate.base import BioInterval
+from ..annotate.file_io import ReferenceFile
 from ..bam import cigar as _cigar
 from ..bam.cache import BamCache
 from ..breakpoint import BreakpointPair
-from ..constants import CALL_METHOD, COLUMNS, PROTOCOL, MavisNamespace
+from ..constants import CALL_METHOD, COLUMNS, PROTOCOL
 from ..util import (
     LOG,
     filter_on_overlap,
@@ -24,24 +26,15 @@ from ..util import (
     write_bed_file,
 )
 from .call import call_events
-from .constants import DEFAULTS, PASS_FILENAME
+from .constants import PASS_FILENAME
 from .evidence import GenomeEvidence, TranscriptomeEvidence
 
 
 def main(
-    inputs,
-    output,
-    bam_file,
-    strand_specific,
-    library,
-    protocol,
-    median_fragment_size,
-    stdev_fragment_size,
-    read_length,
-    reference_genome,
-    annotations,
-    masking,
-    aligner_reference,
+    inputs: List[str],
+    output: str,
+    library: str,
+    config: Dict,
     start_time=int(time.time()),
     **kwargs
 ):
@@ -60,16 +53,18 @@ def main(
         aligner_reference (mavis.annotate.file_io.ReferenceFile): path to the aligner reference file (e.g 2bit file for blat)
     """
     mkdirp(output)
+    reference_genome = (
+        ReferenceFile.load_from_config(config, 'reference_genome', eager_load=True),
+    )
+    annotations = (ReferenceFile.load_from_config(config, 'annotations', eager_load=True),)
+    masking = ReferenceFile.load_from_config(config, 'masking')
+    if not masking.is_empty():
+        masking.load()
     # check the files exist early to avoid waiting for errors
-    if protocol == PROTOCOL.TRANS:
+    if config['libraries'][library]['protocol'] == PROTOCOL.TRANS:
         annotations.load()
     reference_genome.load()
     masking.load()
-
-    validation_settings = {}
-    validation_settings.update(DEFAULTS.items())
-    validation_settings.update({k: v for k, v in kwargs.items() if k in DEFAULTS})
-    validation_settings = MavisNamespace(**validation_settings)
 
     raw_evidence_bam = os.path.join(output, 'raw_evidence.bam')
     contig_bam = os.path.join(output, 'contigs.bam')
@@ -79,21 +74,23 @@ def main(
     passed_bed_file = os.path.join(output, 'validation-passed.bed')
     failed_output_file = os.path.join(output, 'validation-failed.tab')
     contig_aligner_fa = os.path.join(output, 'contigs.fa')
-    if validation_settings.aligner == SUPPORTED_ALIGNER.BLAT:
+    if config['validate']['aligner'] == SUPPORTED_ALIGNER.BLAT:
         contig_aligner_output = os.path.join(output, 'contigs.blat_out.pslx')
         contig_aligner_log = os.path.join(output, 'contigs.blat.log')
-    elif validation_settings.aligner == SUPPORTED_ALIGNER.BWA_MEM:
+    elif config['validate']['aligner'] == SUPPORTED_ALIGNER.BWA_MEM:
         contig_aligner_output = os.path.join(output, 'contigs.bwa_mem.sam')
         contig_aligner_log = os.path.join(output, 'contigs.bwa_mem.log')
     else:
-        raise NotImplementedError('unsupported aligner', validation_settings.aligner)
+        raise NotImplementedError('unsupported aligner', config['validate']['aligner'])
     igv_batch_file = os.path.join(output, 'igv.batch')
-    input_bam_cache = BamCache(bam_file, strand_specific)
+    input_bam_cache = BamCache(
+        config['libraries'][library]['bam_file'], config['libraries'][library]['strand_specific']
+    )
 
     bpps = read_inputs(
         inputs,
         add_default={COLUMNS.cluster_id: None, COLUMNS.stranded: False},
-        add={COLUMNS.protocol: protocol, COLUMNS.library: library},
+        add={COLUMNS.protocol: config['libraries'][library]['protocol'], COLUMNS.library: library},
         expand_strand=False,
         expand_orient=True,
         cast={COLUMNS.cluster_id: lambda x: str(uuid()) if not x else x},
@@ -111,10 +108,10 @@ def main(
                     stranded=bpp.stranded,
                     untemplated_seq=bpp.untemplated_seq,
                     data=bpp.data,
-                    stdev_fragment_size=stdev_fragment_size,
-                    read_length=read_length,
-                    median_fragment_size=median_fragment_size,
-                    **dict(validation_settings.items())
+                    stdev_fragment_size=config['libraries'][library]['stdev_fragment_size'],
+                    read_length=config['libraries'][library]['read_length'],
+                    median_fragment_size=config['libraries'][library]['median_fragment_size'],
+                    **dict(config['validate'].items())
                 )
                 evidence_clusters.append(evidence)
             except ValueError as err:
@@ -133,10 +130,10 @@ def main(
                     stranded=bpp.stranded,
                     untemplated_seq=bpp.untemplated_seq,
                     data=bpp.data,
-                    stdev_fragment_size=stdev_fragment_size,
-                    read_length=read_length,
-                    median_fragment_size=median_fragment_size,
-                    **dict(validation_settings.items())
+                    stdev_fragment_size=config['libraries'][library]['stdev_fragment_size'],
+                    read_length=config['libraries'][library]['read_length'],
+                    median_fragment_size=config['libraries'][library]['median_fragment_size'],
+                    **dict(config['validate'].items())
                 )
                 evidence_clusters.append(evidence)
             except ValueError as err:
@@ -149,7 +146,12 @@ def main(
         extended_masks[chrom] = []
         for mask in masks:
             extended_masks[chrom].append(
-                BioInterval(chrom, mask.start - read_length, mask.end + read_length, name=mask.name)
+                BioInterval(
+                    chrom,
+                    mask.start - config['libraries'][library]['read_length'],
+                    mask.end + config['libraries'][library]['read_length'],
+                    name=mask.name,
+                )
             )
 
     evidence_clusters, filtered_evidence_clusters = filter_on_overlap(
@@ -223,12 +225,14 @@ def main(
         reference_genome=reference_genome.content,
         aligner_fa_input_file=contig_aligner_fa,
         aligner_output_file=contig_aligner_output,
-        clean_files=validation_settings.clean_aligner_files,
-        aligner=kwargs.get('aligner', validation_settings.aligner),
-        aligner_reference=aligner_reference.name[0],
+        clean_files=config['validate']['clean_aligner_files'],
+        aligner=kwargs.get('aligner', config['validate']['aligner']),
+        aligner_reference=config['reference']['aligner_reference'][0],
         aligner_output_log=contig_aligner_log,
-        blat_min_identity=kwargs.get('blat_min_identity', validation_settings.blat_min_identity),
-        blat_limit_top_aln=kwargs.get('blat_limit_top_aln', validation_settings.blat_limit_top_aln),
+        blat_min_identity=kwargs.get('blat_min_identity', config['validate']['blat_min_identity']),
+        blat_limit_top_aln=kwargs.get(
+            'blat_limit_top_aln', config['validate']['blat_limit_top_aln']
+        ),
         log=LOG,
     )
     for evidence in evidence_clusters:
@@ -339,7 +343,7 @@ def main(
         itertools.chain.from_iterable([e.get_bed_repesentation() for e in event_calls]),
     )
 
-    if validation_settings.write_evidence_files:
+    if config['validate']['write_evidence_files']:
         with pysam.AlignmentFile(contig_bam, 'wb', template=input_bam_cache.fh) as fh:
             LOG('writing:', contig_bam, time_stamp=True)
             for evidence in evidence_clusters:
@@ -384,5 +388,11 @@ def main(
             fh.write('load {} name="{}"\n'.format(contig_bam, 'aligned contigs'))
             fh.write('load {} name="{}"\n'.format(evidence_bed, 'evidence windows'))
             fh.write('load {} name="{}"\n'.format(raw_evidence_bam, 'raw evidence'))
-            fh.write('load {} name="{} {} input"\n'.format(bam_file, library, protocol))
+            fh.write(
+                'load {} name="{} {} input"\n'.format(
+                    config['libraries'][library]['bam_file'],
+                    library,
+                    config['libraries'][library]['protocol'],
+                )
+            )
         generate_complete_stamp(output, LOG, start_time=start_time)

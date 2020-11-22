@@ -1,10 +1,12 @@
 #!python
 import argparse
+import json
 import logging
 import os
 import platform
 import sys
 import time
+from typing import Dict
 
 import tab
 
@@ -15,21 +17,16 @@ from . import util as _util
 from .align import get_aligner_version
 from .annotate import main as annotate_main
 from .cluster import main as cluster_main
-from .cluster.constants import DEFAULTS as CLUSTER_DEFAULTS
-from .constants import EXIT_OK, PROTOCOL, SUBCOMMAND, float_fraction
+from .constants import SUBCOMMAND
 from .error import DrawingFitError
-from .illustrate.constants import DEFAULTS as ILLUSTRATION_DEFAULTS
 from .illustrate.constants import DiagramSettings
 from .illustrate.diagram import draw_multi_transcript_overlay
 from .illustrate.scatter import bam_to_scatter
 from .pairing import main as pairing_main
-from .pairing.constants import DEFAULTS as PAIRING_DEFAULTS
-from .schedule import pipeline as _pipeline
 from .summary import main as summary_main
-from .summary.constants import DEFAULTS as SUMMARY_DEFAULTS
 from .tools import SUPPORTED_TOOL, convert_tool_output
+from .util import filepath
 from .validate import main as validate_main
-from .validate.constants import DEFAULTS as VALIDATION_DEFAULTS
 
 
 def check_overlay_args(args, parser):
@@ -100,7 +97,7 @@ def overlay_main(
     max_drawing_retries,
     min_mapping_quality,
     ymax_color='#FF0000',
-    **kwargs
+    **kwargs,
 ):
     """
     generates an overlay diagram
@@ -190,20 +187,15 @@ def convert_main(inputs, outputfile, file_type, strand_specific=False, assume_no
     _util.output_tabbed_file(bpp_results, outputfile)
 
 
-def main(argv=None):
-    """
-    sets up the parser and checks the validity of command line args
-    loads reference files and redirects into subcommand main functions
-
-    Args:
-        argv (list): List of arguments, defaults to command line arguments
-    """
-    if argv is None:  # need to do at run time or patching will not behave as expected
-        argv = sys.argv[1:]
-    start_time = int(time.time())
-
+def create_parser(argv):
     parser = argparse.ArgumentParser(formatter_class=_config.CustomHelpFormatter)
-    _config.augment_parser(['version'], parser)
+    parser.add_argument(
+        '-v',
+        '--version',
+        action='version',
+        version='%(prog)s version ' + __version__,
+        help='Outputs the version number',
+    )
     subp = parser.add_subparsers(
         dest='command', help='specifies which step/stage in the pipeline or which subprogram to use'
     )
@@ -216,87 +208,27 @@ def main(argv=None):
         )
         required[command] = subparser.add_argument_group('required arguments')
         optional[command] = subparser.add_argument_group('optional arguments')
-        _config.augment_parser(['help', 'version', 'log', 'log_level'], optional[command])
-
-    # config arguments
-    required[SUBCOMMAND.CONFIG].add_argument(
-        '-w',
-        '--write',
-        help='path to the new configuration file',
-        required=True,
-        metavar='FILEPATH',
-    )
-    optional[SUBCOMMAND.CONFIG].add_argument(
-        '--library',
-        metavar='<name> {genome,transcriptome} {diseased,normal} [strand_specific] [/path/to/bam/file]',
-        action=_config.RangeAppendAction,
-        help='configuration for libraries to be analyzed by mavis',
-        nmin=3,
-        nmax=5,
-    )
-    optional[SUBCOMMAND.CONFIG].add_argument(
-        '--input',
-        help='path to an input file or filter for mavis followed by the library names it '
-        'should be used for',
-        nmin=2,
-        action=_config.RangeAppendAction,
-        metavar='FILEPATH <name> [<name> ...]',
-    )
-    optional[SUBCOMMAND.CONFIG].add_argument(
-        '--assign',
-        help='library name followed by path(s) to input file(s) or filter names. This represents the list'
-        ' of inputs that should be used for the library',
-        action=_config.RangeAppendAction,
-        nmin=2,
-        metavar='<name> FILEPATH [FILEPATH ...]',
-    )
-    optional[SUBCOMMAND.CONFIG].add_argument(
-        '--genome_bins',
-        default=_util.get_env_variable('genome_bins', 100),
-        type=int,
-        metavar=_config.get_metavar(int),
-        help='number of bins/samples to use in calculating the fragment size stats for genomes',
-    )
-    optional[SUBCOMMAND.CONFIG].add_argument(
-        '--transcriptome_bins',
-        default=_util.get_env_variable('transcriptome_bins', 500),
-        type=int,
-        metavar=_config.get_metavar(int),
-        help='number of genes to use in calculating the fragment size stats for genomes',
-    )
-    optional[SUBCOMMAND.CONFIG].add_argument(
-        '--distribution_fraction',
-        default=_util.get_env_variable('distribution_fraction', 0.97),
-        type=float_fraction,
-        metavar=_config.get_metavar(float),
-        help='the proportion of the distribution of calculated fragment sizes to use in determining the stdev',
-    )
-    optional[SUBCOMMAND.CONFIG].add_argument(
-        '--convert',
-        nmin=3,
-        metavar='<alias> FILEPATH [FILEPATH ...] {{{}}} [stranded]'.format(
-            ','.join(SUPPORTED_TOOL.values())
-        ),
-        help='input file conversion for internally supported tools',
-        action=_config.RangeAppendAction,
-    )
-    optional[SUBCOMMAND.CONFIG].add_argument(
-        '--external_conversion',
-        metavar=('<alias>', '<"command">'),
-        nargs=2,
-        default=[],
-        help='alias for use in inputs and full command (quoted)',
-        action='append',
-    )
-    optional[SUBCOMMAND.CONFIG].add_argument(
-        '--add_defaults',
-        default=False,
-        action='store_true',
-        help='write current defaults for all non-specified options to the config output',
-    )
-    _config.augment_parser(['annotations'], optional[SUBCOMMAND.CONFIG])
-    # add the optional annotations file (only need this is auto generating bam stats for the transcriptome)
-    _config.augment_parser(['skip_stage'], optional[SUBCOMMAND.CONFIG])
+        optional[command].add_argument(
+            '-h', '--help', action='help', help='show this help message and exit'
+        )
+        optional[command].add_argument(
+            '-v',
+            '--version',
+            action='version',
+            version='%(prog)s version ' + __version__,
+            help='Outputs the version number',
+        )
+        optional[command].add_argument('--log', help='redirect stdout to a log file', default=None)
+        optional[command].add_argument(
+            '--log_level',
+            help='level of logging to output',
+            choices=['INFO', 'DEBUG'],
+            default='INFO',
+        )
+        if command != SUBCOMMAND.CONVERT:
+            optional[command].add_argument(
+                '--config', '-c', help='path to the JSON config file', type=filepath, required=True
+            )
 
     # convert
     required[SUBCOMMAND.CONVERT].add_argument(
@@ -305,41 +237,20 @@ def main(argv=None):
         required=True,
         help='Indicates the input file type to be parsed',
     )
-    _config.augment_parser(
-        ['strand_specific', 'assume_no_untemplated'], optional[SUBCOMMAND.CONVERT]
+    optional[SUBCOMMAND.CONVERT].add_argument(
+        '--strand_specific', type=tab.cast_boolean, default=False
+    )
+    optional[SUBCOMMAND.CONVERT].add_argument(
+        '--assume_no_untemplated', type=tab.cast_boolean, default=True
     )
     required[SUBCOMMAND.CONVERT].add_argument(
         '--outputfile', '-o', required=True, help='path to the outputfile', metavar='FILEPATH'
     )
 
-    for command in set(SUBCOMMAND.values()) - {SUBCOMMAND.CONFIG, SUBCOMMAND.CONVERT}:
+    for command in set(SUBCOMMAND.values()) - {SUBCOMMAND.CONVERT}:
         required[command].add_argument(
             '-o', '--output', help='path to the output directory', required=True
         )
-
-    # pipeline
-    _config.augment_parser(['config'], required[SUBCOMMAND.SETUP])
-    optional[SUBCOMMAND.SETUP].add_argument(
-        '--skip_stage',
-        choices=[SUBCOMMAND.CLUSTER, SUBCOMMAND.VALIDATE],
-        action='append',
-        default=[],
-        help='Use flag once per stage to skip. Can skip clustering or validation or both',
-    )
-
-    # schedule arguments
-    optional[SUBCOMMAND.SCHEDULE].add_argument(
-        '--submit',
-        action='store_true',
-        default=False,
-        help='submit jobs to the the scheduler specified',
-    )
-    optional[SUBCOMMAND.SCHEDULE].add_argument(
-        '--resubmit',
-        action='store_true',
-        default=False,
-        help='resubmit jobs in error states to the the scheduler specified',
-    )
 
     # add the inputs argument
     for command in [
@@ -359,76 +270,14 @@ def main(argv=None):
             metavar='FILEPATH',
         )
 
-    # cluster
-    _config.augment_parser(
-        ['library', 'protocol', 'strand_specific', 'disease_status'], required[SUBCOMMAND.CLUSTER]
-    )
-    _config.augment_parser(
-        list(CLUSTER_DEFAULTS.keys()) + ['masking', 'annotations'], optional[SUBCOMMAND.CLUSTER]
-    )
-    optional[SUBCOMMAND.CLUSTER].add_argument(
-        '--split_only',
-        help='Cluster the files or simply split them without clustering',
-        type=tab.cast_boolean,
-    )
-
-    # validate
-    _config.augment_parser(
-        [
-            'library',
-            'protocol',
-            'bam_file',
-            'read_length',
-            'stdev_fragment_size',
-            'median_fragment_size',
-            'strand_specific',
-            'reference_genome',
-            'aligner_reference',
-        ],
-        required[SUBCOMMAND.VALIDATE],
-    )
-    _config.augment_parser(VALIDATION_DEFAULTS.keys(), optional[SUBCOMMAND.VALIDATE])
-    _config.augment_parser(['masking', 'annotations'], optional[SUBCOMMAND.VALIDATE])
-
-    # annotate
-    _config.augment_parser(
-        ['library', 'protocol', 'annotations', 'reference_genome'], required[SUBCOMMAND.ANNOTATE]
-    )
-    _config.augment_parser(
-        ['max_proximity', 'masking', 'template_metadata'], optional[SUBCOMMAND.ANNOTATE]
-    )
-    _config.augment_parser(
-        list(_annotate.constants.DEFAULTS.keys()) + list(ILLUSTRATION_DEFAULTS.keys()),
-        optional[SUBCOMMAND.ANNOTATE],
-    )
-
-    # pair
-    _config.augment_parser(['annotations'], required[SUBCOMMAND.PAIR], optional[SUBCOMMAND.PAIR])
-    _config.augment_parser(
-        ['max_proximity'] + list(PAIRING_DEFAULTS.keys()), optional[SUBCOMMAND.PAIR]
-    )
-
-    # summary
-    _config.augment_parser(
-        [
-            'annotations',
-            'flanking_call_distance',
-            'split_call_distance',
-            'contig_call_distance',
-            'spanning_call_distance',
-        ],
-        required[SUBCOMMAND.SUMMARY],
-    )
-    _config.augment_parser(SUMMARY_DEFAULTS.keys(), optional[SUBCOMMAND.SUMMARY])
-    _config.augment_parser(['dgv_annotation'], optional[SUBCOMMAND.SUMMARY])
+    # library specific commands
+    for command in [SUBCOMMAND.CLUSTER, SUBCOMMAND.VALIDATE, SUBCOMMAND.ANNOTATE]:
+        required[command].add_argument(
+            '--library', '-l', required=True, help='The library to run the current step on'
+        )
 
     # overlay arguments
     required[SUBCOMMAND.OVERLAY].add_argument('gene_name', help='Gene ID or gene alias to be drawn')
-    _config.augment_parser(['annotations'], required[SUBCOMMAND.OVERLAY])
-    _config.augment_parser(
-        ['drawing_width_iter_increase', 'max_drawing_retries', 'width', 'min_mapping_quality'],
-        optional[SUBCOMMAND.OVERLAY],
-    )
     optional[SUBCOMMAND.OVERLAY].add_argument(
         '--buffer_length',
         default=0,
@@ -455,12 +304,24 @@ def main(argv=None):
         action=_config.RangeAppendAction,
     )
 
-    args = _util.MavisNamespace(**parser.parse_args(argv).__dict__)
+    return parser, _util.MavisNamespace(**parser.parse_args(argv).__dict__)
+
+
+def main(argv=None):
+    """
+    sets up the parser and checks the validity of command line args
+    loads reference files and redirects into subcommand main functions
+
+    Args:
+        argv (list): List of arguments, defaults to command line arguments
+    """
+    if argv is None:  # need to do at run time or patching will not behave as expected
+        argv = sys.argv[1:]
+    start_time = int(time.time())
+    parser, args = create_parser(argv)
+
     if args.command == SUBCOMMAND.OVERLAY:
         args = check_overlay_args(args, parser)
-
-    if args.command == SUBCOMMAND.VALIDATE:
-        args.aligner_version = get_aligner_version(args.aligner)
 
     log_conf = {'format': '{message}', 'style': '{', 'level': args.log_level}
 
@@ -474,16 +335,18 @@ def main(argv=None):
     _util.LOG('MAVIS: {}'.format(__version__))
     _util.LOG('hostname:', platform.node(), time_stamp=False)
     _util.log_arguments(args)
-    rfile_args = args
 
-    if args.command == SUBCOMMAND.SETUP:  # load the configuration file
-        config = _config.MavisConfig.read(args.config)
-        config.output = args.output
-        config.skip_stage = args.skip_stage
-        config.command = SUBCOMMAND.SETUP
-        rfile_args = config.reference
-        args = config
+    config: Dict = dict()
+    try:
+        with open(args.config, 'r') as fh:
+            config = json.load(fh)
+            _config.validate_config(config, args.command)
+    except AttributeError as err:
+        if args.command != SUBCOMMAND.CONVERT:
+            raise err
 
+    if args.command == SUBCOMMAND.VALIDATE:
+        args.aligner_version = get_aligner_version(config['validate']['aligner'])
     # try checking the input files exist
     try:
         args.inputs = _util.bash_expands(*args.inputs)
@@ -492,81 +355,53 @@ def main(argv=None):
     except FileNotFoundError:
         parser.error('--inputs file(s) for {} {} do not exist'.format(args.command, args.inputs))
 
-    # convert reference files to objects to store both content and name for rewrite
-    for arg in [f for f in _annotate.file_io.REFERENCE_DEFAULTS.keys() if f != 'aligner_reference']:
-        try:
-            rfile_args[arg] = _annotate.file_io.ReferenceFile(
-                arg, assert_exists=True, *rfile_args[arg]
-            )
-        except AttributeError:
-            pass
-        except FileNotFoundError:
-            parser.error('--{} The file specified does not exist: {}'.format(arg, rfile_args[arg]))
-
-    # throw an error if MAVIS can't find the aligner reference
-    try:
-        rfile_args.aligner_reference = _annotate.file_io.ReferenceFile(
-            'aligner_reference', rfile_args.aligner_reference, assert_exists=True
-        )
-    except AttributeError:
-        pass
-    except FileNotFoundError:
-        parser.error(
-            '--aligner_reference file does not exist at: {}'.format(rfile_args.aligner_reference)
-        )
-
-    # for specific cases throw an argument error if missing annotations
-    if any(
-        [
-            args.command == SUBCOMMAND.CLUSTER and args.uninformative_filter,
-            args.command == SUBCOMMAND.CONFIG
-            and any([PROTOCOL.TRANS in values for values in args.library])
-            and SUBCOMMAND.VALIDATE not in args.skip_stage,
-            args.command == SUBCOMMAND.VALIDATE and args.protocol == PROTOCOL.TRANS,
-            args.command
-            in {
-                SUBCOMMAND.PAIR,
-                SUBCOMMAND.ANNOTATE,
-                SUBCOMMAND.SUMMARY,
-                SUBCOMMAND.OVERLAY,
-                SUBCOMMAND.SETUP,
-            },
-        ]
-    ):
-        try:
-            rfile_args.annotations.files_exist(not_empty=True)
-        except FileNotFoundError:
-            parser.error('--annotations file(s) are required and do not exist')
-
     # decide which main function to execute
-    ret_val = EXIT_OK
     command = args.command
-    log_to_file = args.get('log', None)
-
-    # discard any arguments needed for redirect/setup only
-    for init_arg in ['command', 'log', 'log_level']:
-        args.discard(init_arg)
 
     try:
         if command == SUBCOMMAND.CLUSTER:
-            ret_val = cluster_main.main(**args, start_time=start_time)
+            cluster_main.main(
+                inputs=args.inputs,
+                output=args.output,
+                start_time=start_time,
+                config=config,
+                library=args.library,
+            )
         elif command == SUBCOMMAND.VALIDATE:
-            validate_main.main(**args, start_time=start_time)
+            validate_main.main(
+                inputs=args.inputs,
+                output=args.output,
+                start_time=start_time,
+                config=config,
+                library=args.library,
+            )
         elif command == SUBCOMMAND.ANNOTATE:
-            annotate_main.main(**args, start_time=start_time)
+            annotate_main.main(
+                inputs=args.inputs,
+                output=args.output,
+                start_time=start_time,
+                config=config,
+                library=args.library,
+            )
         elif command == SUBCOMMAND.PAIR:
-            pairing_main.main(**args, start_time=start_time)
+            pairing_main.main(
+                inputs=args.inputs,
+                output=args.output,
+                start_time=start_time,
+                config=config,
+            )
         elif command == SUBCOMMAND.SUMMARY:
             summary_main.main(**args, start_time=start_time)
         elif command == SUBCOMMAND.CONVERT:
-            convert_main(**args)
-        elif command == SUBCOMMAND.OVERLAY:
+            convert_main(
+                args.inputs,
+                args.outputfile,
+                args.file_type,
+                args.strand_specific,
+                args.assume_no_untemplated,
+            )
+        else:
             overlay_main(**args)
-        elif command == SUBCOMMAND.CONFIG:
-            _config.generate_config(args, parser, log=_util.LOG)
-        else:  # PIPELINE
-            config.reference = rfile_args
-            _pipeline.Pipeline.build(config)
 
         duration = int(time.time()) - start_time
         hours = duration - duration % 3600
@@ -577,16 +412,16 @@ def main(argv=None):
             time_stamp=False,
         )
         _util.LOG('run time (s): {}'.format(duration), time_stamp=False)
-        return ret_val
     except Exception as err:
-        if log_to_file:
-            logging.exception(err)  # capture the error in the logging output file
         raise err
     finally:
-        for handler in logging.root.handlers:
-            logging.root.removeHandler(handler)
-        for handler in original_logging_handlers:
-            logging.root.addHandler(handler)
+        try:
+            for handler in logging.root.handlers:
+                logging.root.removeHandler(handler)
+            for handler in original_logging_handlers:
+                logging.root.addHandler(handler)
+        except Exception as err:
+            print(err)
 
 
 if __name__ == '__main__':
