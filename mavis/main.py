@@ -391,7 +391,12 @@ def main(argv=None):
                 config=config,
             )
         elif command == SUBCOMMAND.SUMMARY:
-            summary_main.main(**args, start_time=start_time)
+            summary_main.main(
+                inputs=args.inputs,
+                output=args.output,
+                start_time=start_time,
+                config=config,
+            )
         elif command == SUBCOMMAND.CONVERT:
             convert_main(
                 args.inputs,

@@ -1,7 +1,9 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
     "properties": {
         "annotate": {
+            "additionalProperties": false,
             "properties": {
                 "annotation_filters": {
                     "default": [
@@ -53,6 +55,7 @@
         },
         "bam_stats": {
             "description": "settings which affect how the bam stats are calculated",
+            "additionalProperties": false,
             "properties": {
                 "distribution_fraction": {
                     "default": 0.97,
@@ -80,6 +83,7 @@
             "type": "object"
         },
         "cluster": {
+            "additionalProperties": false,
             "properties": {
                 "cluster_initial_size_limit": {
                     "default": 25,
@@ -213,6 +217,7 @@
             "type": "integer"
         },
         "illustrate": {
+            "additionalProperties": false,
             "properties": {
                 "breakpoint_color": {
                     "default": "#000000",
@@ -325,6 +330,7 @@
         },
         "libraries": {
             "additionalProperties": {
+                "additionalProperties": false,
                 "properties": {
                     "assign": {
                         "items": {
@@ -389,6 +395,7 @@
             "type": "string"
         },
         "pairing": {
+            "additionalProperties": false,
             "properties": {
                 "contig_call_distance": {
                     "default": 10,
@@ -419,6 +426,7 @@
             "type": "object"
         },
         "reference": {
+            "additionalProperties": false,
             "properties": {
                 "aligner_reference": {
                     "examples": [
@@ -497,6 +505,7 @@
             "type": "object"
         },
         "schedule": {
+            "additionalProperties": false,
             "properties": {
                 "annotation_memory": {
                     "default": 12000,
@@ -588,6 +597,7 @@
             "type": "array"
         },
         "summary": {
+            "additionalProperties": false,
             "properties": {
                 "filter_cdna_synon": {
                     "default": true,
@@ -640,6 +650,7 @@
             "type": "object"
         },
         "validate": {
+            "additionalProperties": false,
             "properties": {
                 "aligner": {
                     "default": "blat",

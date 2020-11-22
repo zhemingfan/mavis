@@ -53,18 +53,15 @@ def main(
         aligner_reference (mavis.annotate.file_io.ReferenceFile): path to the aligner reference file (e.g 2bit file for blat)
     """
     mkdirp(output)
-    reference_genome = (
-        ReferenceFile.load_from_config(config, 'reference_genome', eager_load=True),
+    reference_genome = ReferenceFile.load_from_config(config, 'reference_genome', eager_load=True)
+    annotations = ReferenceFile.load_from_config(
+        config,
+        'annotations',
+        eager_load=bool(config['libraries'][library]['protocol'] == PROTOCOL.TRANS),
     )
-    annotations = (ReferenceFile.load_from_config(config, 'annotations', eager_load=True),)
     masking = ReferenceFile.load_from_config(config, 'masking')
     if not masking.is_empty():
         masking.load()
-    # check the files exist early to avoid waiting for errors
-    if config['libraries'][library]['protocol'] == PROTOCOL.TRANS:
-        annotations.load()
-    reference_genome.load()
-    masking.load()
 
     raw_evidence_bam = os.path.join(output, 'raw_evidence.bam')
     contig_bam = os.path.join(output, 'contigs.bam')

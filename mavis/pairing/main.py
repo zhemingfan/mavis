@@ -140,6 +140,6 @@ def main(
         bpp = bpp_by_product_key[pkey]
         bpp.data[COLUMNS.inferred_pairing] = ';'.join(sorted(pkeys))
 
-    fname = os.path.join(output, 'mavis_paired_{}.tab'.format('_'.join(sorted(list(libraries)))))
+    fname = os.path.join(output, 'mavis_paired.tab')
     output_tabbed_file(bpps, fname)
     generate_complete_stamp(output, LOG)

@@ -124,10 +124,8 @@ def main(
         inputs (List[str]): list of input files to read
         output (str): path to the output directory
     """
-    reference_genome = (
-        ReferenceFile.load_from_config(config, 'reference_genome', eager_load=True),
-    )
-    annotations = (ReferenceFile.load_from_config(config, 'annotations', eager_load=True),)
+    reference_genome = ReferenceFile.load_from_config(config, 'reference_genome')
+    annotations = ReferenceFile.load_from_config(config, 'annotations')
     template_metadata = ReferenceFile.load_from_config(config, 'template_metadata', eager_load=True)
 
     drawings_directory = os.path.join(output, 'drawings')
@@ -155,6 +153,7 @@ def main(
 
     annotations.load()
     reference_genome.load()
+
     annotated_events = annotate_events(
         bpps,
         reference_genome=reference_genome.content,
