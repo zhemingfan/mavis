@@ -32,3 +32,5 @@ junit
 /docs/package/mavis/*/*.md
 # don't ignore subpackage summary files
 !/docs/package/mavis/*/index.md
+
+.snakemake
