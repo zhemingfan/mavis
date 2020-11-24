@@ -55,12 +55,6 @@ export PATH=/path/to/directory/containing/blat/binary:$PATH
 ```
 
 [blat](http://mavis.bcgsc.ca/docs/latest/glossary.html#term-blat) is the default aligner. To configure MAVIS to use [bwa mem](http://mavis.bcgsc.ca/docs/latest/glossary.html#term-bwa) as a default instead, use the
-[MAVIS environment variables](http://mavis.bcgsc.ca/configuration.html#environment-variables). Make sure to specify BOTH of the variables below to change the default aligner.
-
-``` bash
-export MAVIS_ALIGNER='bwa mem'
-export MAVIS_ALIGNER_REFERENCE=/path/to/mem/fasta/ref/file
-```
 
 After this has been installed MAVIS itself can be installed through [pip](https://pypi.org/project/mavis/)
 
